@@ -11,8 +11,9 @@ const app = /** @type {HTMLElement} */ (document.getElementById("app"));
 class SignedOut extends Error {}
 
 /** @typedef {{ task: string, projectIds: string[], lastUsedAt: number }} Suggestion */
-/** @type {{ phase: "loading" | "connect" | "ready", me: any, projects: any[], timers: any[], week: any[], history: Map<string, Suggestion>, error: string | null, busy: Set<string>, task: string, projectId: string }} */
-const state = { phase: "loading", me: null, projects: [], timers: [], week: [], history: new Map(), error: null, busy: new Set(), task: "", projectId: "" };
+/** An entry being edited, with its times as HH:MM on `day` in the user's timezone. @typedef {{ id: string, running: boolean, day: string, task: string, projectId: string, start: string, end: string }} Draft */
+/** @type {{ phase: "loading" | "connect" | "ready", me: any, projects: any[], timers: any[], week: any[], history: Map<string, Suggestion>, error: string | null, busy: Set<string>, task: string, projectId: string, editing: Draft | null, confirming: string | null }} */
+const state = { phase: "loading", me: null, projects: [], timers: [], week: [], history: new Map(), error: null, busy: new Set(), task: "", projectId: "", editing: null, confirming: null };
 
 // ---------- API ----------
 
@@ -70,6 +71,27 @@ function elapsed(startedAt) {
   return [Math.floor(s / 3600), Math.floor((s % 3600) / 60), s % 60].map((n) => String(n).padStart(2, "0")).join(":");
 }
 const runningMinutes = () => state.timers.reduce((sum, t) => sum + (Date.now() - Date.parse(t.startedAt)) / 60_000, 0);
+/** @param {string} day YYYY-MM-DD */
+function nextDay(day) {
+  const [y, m, d] = day.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
+}
+/** How far the user's timezone is ahead of UTC at an instant, in ms. @param {number} t */
+function offsetAt(t) {
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone: tz(), hourCycle: "h23", year: "numeric", month: "numeric", day: "numeric", hour: "numeric", minute: "numeric", second: "numeric" }).formatToParts(t);
+  const p = Object.fromEntries(parts.map((x) => [x.type, Number(x.value)]));
+  return Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second) - Math.floor(t / 1000) * 1000;
+}
+/** The instant a wall-clock time on a day has in the user's timezone. @param {string} day YYYY-MM-DD @param {string} time HH:MM */
+function atTime(day, time) {
+  const [y, m, d] = day.split("-").map(Number);
+  const [hh, mm] = time.split(":").map(Number);
+  const wall = Date.UTC(y, m - 1, d, hh, mm);
+  // The offset depends on the instant being looked for, so correct the guess once more for a DST change.
+  let t = wall;
+  for (let i = 0; i < 2; i++) t = wall - offsetAt(t);
+  return new Date(t);
+}
 
 // ---------- loading ----------
 
@@ -107,13 +129,13 @@ function remember(entries) {
   }
 }
 
-/** Up to 8 tasks containing `query`, the selected project's first, then the most recent. */
-function suggest(query) {
+/** Up to 8 tasks containing `query`, the selected project's first, then the most recent. @param {string} query @param {string} projectId */
+function suggest(query, projectId) {
   const q = query.trim().toLowerCase();
-  const has = (/** @type {Suggestion} */ s) => s.projectIds.includes(state.projectId);
+  const has = (/** @type {Suggestion} */ s) => s.projectIds.includes(projectId);
   return [...state.history.values()]
     .filter((s) => !q || s.task.toLowerCase().includes(q))
-    .sort((a, b) => (state.projectId && has(a) !== has(b) ? (has(a) ? -1 : 1) : b.lastUsedAt - a.lastUsedAt))
+    .sort((a, b) => (projectId && has(a) !== has(b) ? (has(a) ? -1 : 1) : b.lastUsedAt - a.lastUsedAt))
     .slice(0, 8);
 }
 
@@ -172,6 +194,36 @@ const projectName = (id) => {
 /** @param {string} id */
 const projectLine = (id) => h("div", { class: "project" }, h("span", {}, projectName(id)));
 
+const SVG = "http://www.w3.org/2000/svg";
+/** The Cyclops web app's row icons. */
+const ICONS = {
+  resume: { size: 12, stroke: 1, paths: ["M9.79363 5.14742L3.77252 1.45752C3.10619 1.04918 2.25 1.52866 2.25 2.31015V9.68987C2.25 10.4714 3.10618 10.9508 3.77251 10.5425L9.79362 6.85269C10.4303 6.46254 10.4303 5.53758 9.79363 5.14742Z"] },
+  edit: { size: 12, stroke: 1, paths: ["M10.161 1.83896C10.92 2.59796 10.92 3.82996 10.161 4.58896L5.38 9.36997C5.131 9.61897 4.821 9.79798 4.481 9.88798L1.25 10.75L2.112 7.51896C2.203 7.17896 2.381 6.86897 2.63 6.61997L7.411 1.83896C8.17 1.07996 9.402 1.07996 10.161 1.83896Z"] },
+  delete: {
+    size: 18,
+    stroke: 1.5,
+    paths: [
+      "M13.6977 7.75L13.35 14.35C13.294 15.4201 12.416 16.25 11.353 16.25H6.64804C5.58404 16.25 4.70703 15.42 4.65103 14.35L4.30334 7.75",
+      "M2.75 4.75H15.25",
+      "M6.75 4.75V2.75C6.75 2.2 7.198 1.75 7.75 1.75H10.25C10.802 1.75 11.25 2.2 11.25 2.75V4.75",
+    ],
+  },
+};
+
+/** A button showing only an icon. `label` names it for screen readers. @param {keyof typeof ICONS} name @param {string} label @param {Record<string, any>} props */
+function iconButton(name, label, props) {
+  const { size, stroke, paths } = ICONS[name];
+  const svg = document.createElementNS(SVG, "svg");
+  const attrs = { viewBox: `0 0 ${size} ${size}`, fill: "none", stroke: "currentColor", "stroke-width": stroke, "stroke-linecap": "round", "stroke-linejoin": "round", "aria-hidden": "true" };
+  for (const [key, value] of Object.entries(attrs)) svg.setAttribute(key, String(value));
+  for (const d of paths) {
+    const path = document.createElementNS(SVG, "path");
+    path.setAttribute("d", d);
+    svg.append(path);
+  }
+  return h("button", { class: `ghost icon ${name}`, type: "button", "aria-label": label, title: label, ...props }, svg);
+}
+
 function renderConnect() {
   let token = "";
   const busy = state.busy.has("connect");
@@ -209,17 +261,190 @@ function renderConnect() {
 }
 
 function renderTimer(timer) {
+  if (state.editing?.id === timer.id) return h("section", { class: "card timer" }, renderEdit(timer));
   const key = `stop:${timer.id}`;
+  const name = timer.task ? `${timer.task} timer` : "timer";
   return h(
     "section",
     { class: "card timer" },
     h("div", { class: "row" }, h("div", { class: "grow task" }, timer.task || "No description"), h("div", { class: "clock", "data-started": timer.startedAt }, elapsed(timer.startedAt))),
+    state.confirming === timer.id
+      ? renderConfirm(timer, "Delete this timer? Its time won't be saved.", "Keep running", "task")
+      : h(
+          "div",
+          { class: "row" },
+          h("div", { class: "grow" }, projectLine(timer.projectId)),
+          iconButton("edit", `Edit ${name}`, { id: `edit-${timer.id}`, onclick: () => openEdit(timer) }),
+          iconButton("delete", `Delete ${name}`, { id: `delete-${timer.id}`, onclick: () => openConfirm(timer.id) }),
+          h("button", { class: "danger", disabled: state.busy.has(key), onclick: () => void act(key, () => api(`/time-entries/${timer.id}/stop`, { method: "POST" })) }, state.busy.has(key) ? "Stopping…" : "Stop"),
+        ),
+  );
+}
+
+// ---------- editing and deleting ----------
+
+/** Where focus goes after the next render, when the element that has it is going away. @type {string | null} */
+let focusNext = null;
+
+/** @param {any} entry */
+function openEdit(entry) {
+  state.editing = {
+    id: entry.id,
+    running: !entry.endedAt,
+    day: dayOf(new Date(entry.startedAt)),
+    task: entry.task ?? "",
+    projectId: entry.projectId,
+    start: clockTime(entry.startedAt),
+    end: entry.endedAt ? clockTime(entry.endedAt) : "",
+  };
+  delete boxes["edit-task"];
+  delete boxes["edit-project"];
+  focusNext = "edit-task";
+  set({ confirming: null, error: null });
+}
+
+/** @param {string} id */
+function closeEdit(id) {
+  focusNext = `edit-${id}`;
+  set({ editing: null, error: null });
+}
+
+/** The draft's start and end. An end at or before the start is on the next day, as in the Cyclops web app. @param {Draft} draft */
+function range(draft) {
+  const start = draft.start ? atTime(draft.day, draft.start) : null;
+  const end = draft.start && draft.end ? atTime(draft.end <= draft.start ? nextDay(draft.day) : draft.day, draft.end) : null;
+  return { start, end };
+}
+
+/** What the draft changes, as PATCH /time-entries/:id takes it. @param {any} entry @param {Draft} draft */
+function changes(entry, draft) {
+  const { start, end } = range(draft);
+  if (!start || (!draft.running && !end)) throw new Error(draft.running ? "Enter a start time." : "Enter a start and an end time.");
+  if (draft.running && start.getTime() > Date.now()) throw new Error("The start time can't be in the future while the timer runs.");
+  if (!draft.running && draft.end === draft.start) throw new Error("The end time must differ from the start.");
+  // The form shows minutes, so a time left alone matches its entry to the minute and isn't sent.
+  const minute = (/** @type {Date | string} */ t) => Math.floor(new Date(t).getTime() / 60_000);
+  /** @type {Record<string, string>} */
+  const body = {};
+  // An empty task clears it, as in the Cyclops web app.
+  if (draft.task.trim() !== (entry.task ?? "")) body.task = draft.task.trim();
+  if (draft.projectId !== entry.projectId) body.projectId = draft.projectId;
+  if (minute(start) !== minute(entry.startedAt)) body.startedAt = start.toISOString();
+  if (end && minute(end) !== minute(entry.endedAt)) body.endedAt = end.toISOString();
+  return body;
+}
+
+/** @param {any} entry */
+function renderEdit(entry) {
+  const draft = /** @type {Draft} */ (state.editing);
+  const key = `save:${entry.id}`;
+  const busy = state.busy.has(key);
+  const hint = h("span", { class: "grow muted" });
+  const showDuration = () => {
+    const { start, end } = range(draft);
+    hint.textContent = start && end ? duration((end.getTime() - start.getTime()) / 60_000) : "";
+  };
+  const time = (/** @type {"start" | "end"} */ field, /** @type {string} */ label) =>
+    h(
+      "label",
+      { class: "time" },
+      label,
+      h("input", {
+        type: "time",
+        id: `edit-${field}`,
+        value: draft[field],
+        oninput: (/** @type {Event} */ e) => {
+          draft[field] = /** @type {HTMLInputElement} */ (e.target).value;
+          showDuration();
+        },
+      }),
+    );
+  showDuration();
+  return h(
+    "form",
+    {
+      class: "editor stack",
+      "aria-label": `Edit ${entry.task || (draft.running ? "timer" : "entry")}`,
+      onkeydown: (/** @type {KeyboardEvent} */ e) => {
+        if (e.key !== "Escape" || e.defaultPrevented) return;
+        e.preventDefault();
+        closeEdit(entry.id);
+      },
+      onsubmit: (/** @type {SubmitEvent} */ e) => {
+        e.preventDefault();
+        if (busy) return;
+        let body;
+        try {
+          body = changes(entry, draft);
+        } catch (error) {
+          return set({ error: error instanceof Error ? error.message : String(error) });
+        }
+        if (Object.keys(body).length === 0) return closeEdit(entry.id);
+        void act(key, async () => {
+          await api(`/time-entries/${entry.id}`, { method: "PATCH", body });
+          if (state.editing !== draft) return;
+          state.editing = null;
+          focusNext = `edit-${entry.id}`;
+        });
+      },
+    },
+    taskBox({ id: "edit-task", label: "Task", placeholder: "What have you worked on?", text: () => draft.task, onChange: (task) => (draft.task = task), projectId: () => draft.projectId }),
+    projectBox("edit-project", () => draft.projectId, (id) => (draft.projectId = id)),
+    h("div", { class: "row" }, time("start", draft.running ? "Started" : "Start"), draft.running ? null : time("end", "End"), hint),
     h(
       "div",
-      { class: "row" },
-      h("div", { class: "grow" }, projectLine(timer.projectId)),
-      h("button", { class: "danger", disabled: state.busy.has(key), onclick: () => void act(key, () => api(`/time-entries/${timer.id}/stop`, { method: "POST" })) }, state.busy.has(key) ? "Stopping…" : "Stop"),
+      { class: "row buttons" },
+      h("button", { class: "ghost", type: "button", onclick: () => closeEdit(entry.id) }, "Cancel"),
+      // aria-disabled rather than disabled, so focus stays on the button while it saves.
+      h("button", { class: "primary", type: "submit", id: "edit-save", "aria-disabled": busy ? "true" : null }, busy ? "Saving…" : "Save"),
     ),
+  );
+}
+
+/** @param {string} id */
+function openConfirm(id) {
+  focusNext = `keep-${id}`;
+  set({ confirming: id, editing: null, error: null });
+}
+
+/** @param {string} id */
+function closeConfirm(id) {
+  focusNext = `delete-${id}`;
+  set({ confirming: null, error: null });
+}
+
+/** Asks before deleting, in place of the row's buttons. `after` is the id that gets focus once it's gone. @param {any} entry @param {string} question @param {string} keep @param {string} after */
+function renderConfirm(entry, question, keep, after) {
+  const key = `delete:${entry.id}`;
+  const busy = state.busy.has(key);
+  return h(
+    "div",
+    {
+      class: "confirm row",
+      role: "group",
+      "aria-labelledby": `question-${entry.id}`,
+      onkeydown: (/** @type {KeyboardEvent} */ e) => e.key === "Escape" && closeConfirm(entry.id),
+    },
+    h("span", { class: "grow", id: `question-${entry.id}` }, question),
+    h(
+      "button",
+      {
+        class: "danger",
+        type: "button",
+        id: `confirm-${entry.id}`,
+        "aria-disabled": busy ? "true" : null,
+        onclick: () => {
+          if (busy) return;
+          void act(key, async () => {
+            await api(`/time-entries/${entry.id}`, { method: "DELETE" });
+            if (state.confirming === entry.id) state.confirming = null;
+            focusNext = after;
+          });
+        },
+      },
+      busy ? "Deleting…" : "Delete",
+    ),
+    h("button", { class: "ghost", type: "button", id: `keep-${entry.id}`, onclick: () => closeConfirm(entry.id) }, keep),
   );
 }
 
@@ -348,6 +573,8 @@ function combobox(o) {
       e.preventDefault();
       pick(items[ui.active]);
     } else if (e.key === "Escape" || e.key === "Tab") {
+      // An open list takes the Escape, so a form around the field closes on the next one.
+      if (e.key === "Escape" && ui.open) e.preventDefault();
       close();
     }
   });
@@ -357,6 +584,41 @@ function combobox(o) {
 }
 
 const projectLabel = (p) => `${p.name} · ${p.clientName}`;
+
+/** A task field suggesting recent tasks, the project's own first. @param {{ id: string, label: string, placeholder: string, text: () => string, onChange: (task: string) => void, projectId: () => string }} o */
+const taskBox = (o) =>
+  combobox({
+    id: o.id,
+    label: o.label,
+    placeholder: o.placeholder,
+    freeText: true,
+    text: o.text,
+    onInput: o.onChange,
+    options: (query) => suggest(query, o.projectId()).map((s) => ({ key: s.task, label: s.task })),
+    onPick: o.onChange,
+    empty: (query) => (query.trim() ? "No matching tasks." : "No recent tasks yet."),
+  });
+
+/** A field that finds a project by its name or client. @param {string} id @param {() => string} value @param {(id: string) => void} onChange */
+const projectBox = (id, value, onChange) =>
+  combobox({
+    id,
+    label: "Project",
+    placeholder: "Find a project or client",
+    freeText: false,
+    text: () => {
+      const p = state.projects.find((x) => x.id === value());
+      return p ? projectLabel(p) : "";
+    },
+    options: (query) => {
+      const q = query.trim().toLowerCase();
+      return state.projects
+        .filter((p) => !q || p.name.toLowerCase().includes(q) || p.clientName.toLowerCase().includes(q))
+        .map((p) => ({ key: p.id, label: p.name, detail: p.clientName }));
+    },
+    onPick: onChange,
+    empty: () => "No matching projects.",
+  });
 
 function renderStart() {
   const busy = state.busy.has("start");
@@ -376,38 +638,18 @@ function renderStart() {
         });
       },
     },
-    combobox({
+    taskBox({
       id: "task",
       label: "What are you working on?",
       placeholder: "What are you working on?",
-      freeText: true,
       text: () => state.task,
-      onInput: (value) => (state.task = value),
-      options: (query) => suggest(query).map((s) => ({ key: s.task, label: s.task })),
-      onPick: (task) => (state.task = task),
-      empty: (query) => (query.trim() ? "No matching tasks." : "No recent tasks yet."),
+      onChange: (task) => (state.task = task),
+      projectId: () => state.projectId,
     }),
     h(
       "div",
       { class: "row" },
-      combobox({
-        id: "project",
-        label: "Project",
-        placeholder: "Find a project or client",
-        freeText: false,
-        text: () => {
-          const p = state.projects.find((x) => x.id === state.projectId);
-          return p ? projectLabel(p) : "";
-        },
-        options: (query) => {
-          const q = query.trim().toLowerCase();
-          return state.projects
-            .filter((p) => !q || p.name.toLowerCase().includes(q) || p.clientName.toLowerCase().includes(q))
-            .map((p) => ({ key: p.id, label: p.name, detail: p.clientName }));
-        },
-        onPick: (id) => (state.projectId = id),
-        empty: () => "No matching projects.",
-      }),
+      projectBox("project", () => state.projectId, (id) => (state.projectId = id)),
       h("button", { class: "primary", type: "submit", disabled: busy || !state.projectId }, busy ? "Starting…" : "Start"),
     ),
   );
@@ -428,24 +670,29 @@ function renderEntries() {
       : h(
           "ul",
           { class: "entries" },
-          ...todays.map((e) => {
+          ...todays.map((e, i) => {
+            if (state.editing?.id === e.id) return h("li", { class: "entry editing" }, renderEdit(e));
+            // Once this row is gone, focus moves to the same button on the next one.
+            const neighbour = todays[i + 1] ?? todays[i - 1];
+            if (state.confirming === e.id) return h("li", { class: "entry" }, renderConfirm(e, "Delete this entry?", "Cancel", neighbour ? `delete-${neighbour.id}` : "task"));
             const key = `resume:${e.id}`;
+            const name = e.task || "entry";
             return h(
               "li",
               { class: "entry" },
               h("div", { class: "what" }, h("div", { class: "task" }, e.task || "No description"), projectLine(e.projectId)),
+              h("div", { class: "when" }, h("strong", {}, duration(e.durationMinutes ?? 0)), `${clockTime(e.startedAt)}–${clockTime(e.endedAt)}`),
               h(
-                "button",
-                {
-                  class: "ghost",
-                  "aria-label": `Resume ${e.task || "entry"}`,
+                "div",
+                { class: "actions" },
+                iconButton("resume", `Resume ${name}`, {
                   disabled: state.busy.has(key),
                   onclick: () =>
                     void act(key, () => api("/time-entries/timer", { method: "POST", body: e.task ? { projectId: e.projectId, task: e.task } : { projectId: e.projectId } })),
-                },
-                "Resume",
+                }),
+                iconButton("edit", `Edit ${name}`, { id: `edit-${e.id}`, onclick: () => openEdit(e) }),
+                iconButton("delete", `Delete ${name}`, { id: `delete-${e.id}`, onclick: () => openConfirm(e.id) }),
               ),
-              h("div", { class: "when" }, h("strong", {}, duration(e.durationMinutes ?? 0)), `${clockTime(e.startedAt)}–${clockTime(e.endedAt)}`),
             );
           }),
         ),
@@ -455,8 +702,9 @@ function renderEntries() {
 
 function render() {
   // Rendering replaces the page, so keep the caret in the field you're typing in.
-  const focused = document.activeElement?.id;
-  const caret = document.activeElement instanceof HTMLInputElement ? document.activeElement.selectionStart : null;
+  const focused = focusNext ?? document.activeElement?.id;
+  const caret = !focusNext && document.activeElement instanceof HTMLInputElement ? document.activeElement.selectionStart : null;
+  focusNext = null;
   liveBoxes.clear();
   const parts = [];
   if (state.phase === "loading") parts.push(h("div", { class: "row muted" }, h("span", { class: "spinner", "aria-hidden": true }), "Loading Cyclops…"));
@@ -502,8 +750,9 @@ function render() {
 setInterval(() => {
   for (const el of document.querySelectorAll("[data-started]")) el.textContent = elapsed(/** @type {HTMLElement} */ (el).dataset.started ?? "");
 }, 1000);
+// Not while an entry is being edited: a render moves the caret of a time field back to its hours.
 setInterval(() => {
-  if (state.phase === "ready" && state.busy.size === 0) void refresh().then(render, () => {});
+  if (state.phase === "ready" && state.busy.size === 0 && !state.editing) void refresh().then(render, () => {});
 }, 60_000);
 
 // Claude started or stopped a timer through the plugin's tools.

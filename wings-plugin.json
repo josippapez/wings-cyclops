@@ -1,8 +1,8 @@
 {
   "id": "cyclops",
   "name": "Cyclops",
-  "version": "0.3.2",
-  "description": "Track time in Cyclops from a sidebar, and let Claude start and stop timers.",
+  "version": "0.4.0",
+  "description": "Track, edit and delete time in Cyclops from a sidebar, and let Claude do the same.",
   "api": 1,
   "main": "main.js",
   "permissions": {
@@ -75,6 +75,82 @@
               "description": "The timer to stop, from running_timers"
             }
           },
+          "additionalProperties": false
+        }
+      },
+      {
+        "name": "list_entries",
+        "description": "Lists your Cyclops time entries between two days, with each entry's id, task, project, client, start, end and minutes. A running timer has no end. Use it to find the entryId for update_entry and delete_entry.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "from": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+              "description": "First day, YYYY-MM-DD. Defaults to today, or to `to` when only that is given"
+            },
+            "to": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+              "description": "Last day, YYYY-MM-DD, included. Defaults to today, or to `from` when that is later"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      {
+        "name": "update_entry",
+        "description": "Changes a Cyclops time entry or running timer. Pass only the fields to change. Get the entryId from list_entries or running_timers.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "entryId": {
+              "type": "string",
+              "format": "uuid",
+              "description": "The entry to change"
+            },
+            "task": {
+              "type": "string",
+              "maxLength": 2000,
+              "description": "What was worked on. An empty string clears it"
+            },
+            "projectId": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Move the entry to this project, from list_projects"
+            },
+            "startedAt": {
+              "type": "string",
+              "format": "date-time",
+              "description": "New start, ISO 8601 with a timezone offset, like 2026-10-08T09:00:00+02:00. A running timer can't start in the future"
+            },
+            "endedAt": {
+              "type": "string",
+              "format": "date-time",
+              "description": "New end, ISO 8601 with a timezone offset, after the start. Setting it on a running timer stops the timer"
+            }
+          },
+          "required": [
+            "entryId"
+          ],
+          "additionalProperties": false
+        }
+      },
+      {
+        "name": "delete_entry",
+        "description": "Permanently deletes a Cyclops time entry, or a running timer without saving its time. This can't be undone. Get the entryId from list_entries or running_timers.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "entryId": {
+              "type": "string",
+              "format": "uuid",
+              "description": "The entry to delete"
+            }
+          },
+          "required": [
+            "entryId"
+          ],
           "additionalProperties": false
         }
       }

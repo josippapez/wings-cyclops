@@ -79,6 +79,7 @@
   flex-direction: column;
 }
 .entry {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -108,14 +109,77 @@
   color: var(--wings-fg);
   font-weight: 500;
 }
-.entry button {
-  height: 26px;
-  padding: 0 8px;
+/* The row's buttons take the place of its times while you point at it or tab into it. */
+.entry .actions {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
+  display: flex;
+  gap: 2px;
   opacity: 0;
 }
-.entry:hover button,
-.entry button:focus-visible {
+.entry:hover .actions,
+.entry:focus-within .actions {
   opacity: 1;
+}
+.entry:hover .when,
+.entry:focus-within .when {
+  opacity: 0;
+}
+
+button.icon {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  color: var(--wings-muted);
+}
+button.icon:hover,
+button.icon:focus-visible {
+  color: var(--wings-fg);
+}
+button.icon.delete:hover {
+  color: var(--wings-danger);
+}
+button.icon svg {
+  width: 14px;
+  height: 14px;
+}
+button[aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Editing and deleting, in place of an entry. */
+.entry.editing,
+.entry.editing:hover {
+  padding: 10px;
+  border: 1px solid var(--wings-hairline);
+  border-radius: var(--wings-radius);
+  background: var(--wings-surface);
+}
+.editor,
+.confirm {
+  flex: 1;
+  min-width: 0;
+}
+.time {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--wings-muted);
+}
+.time input {
+  width: auto;
+  color: var(--wings-fg);
+}
+.buttons {
+  justify-content: flex-end;
+}
+.confirm button {
+  height: 26px;
+  padding: 0 10px;
 }
 
 .error {

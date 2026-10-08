@@ -117,3 +117,74 @@ wings.onTool("stop_timer", async ({ timerId }) => {
   void wings.broadcast({ type: "timers-changed" });
   return { stopped: true, timerId: id };
 });
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+// Cyclops reads a time without an offset in its server's own timezone, so one is required.
+const INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/i;
+
+/** @param {unknown} value @param {string} name @param {string} source */
+function uuid(value, name, source) {
+  if (typeof value !== "string" || !UUID.test(value)) throw new Error(`${name} must be an id from ${source}.`);
+  return value;
+}
+
+const entryInfo = (e, byId) => ({
+  id: e.id,
+  date: e.entryDate,
+  task: e.task || null,
+  project: byId.get(e.projectId)?.name ?? e.projectId,
+  client: byId.get(e.projectId)?.clientName ?? null,
+  projectId: e.projectId,
+  startedAt: e.startedAt,
+  endedAt: e.endedAt,
+  minutes: e.durationMinutes,
+});
+
+wings.onTool("list_entries", async ({ from, to }) => {
+  for (const [name, value] of Object.entries({ from, to })) {
+    if (value !== undefined && (typeof value !== "string" || !DAY.test(value))) throw new Error(`${name} must be a date like 2026-10-08.`);
+  }
+  const first = from ?? to ?? today();
+  const last = to ?? (first > today() ? first : today());
+  if (first > last) throw new Error("from must be on or before to.");
+  const [entries, list] = await Promise.all([api(`/time-entries?from=${first}&to=${last}`), api("/projects")]);
+  const byId = new Map(list.map((p) => [p.id, p]));
+  return entries.length ? entries.map((e) => entryInfo(e, byId)) : `No entries from ${first} to ${last}.`;
+});
+
+wings.onTool("update_entry", async (input) => {
+  const allowed = ["entryId", "task", "projectId", "startedAt", "endedAt"];
+  // A misspelt field would otherwise be dropped without a word, and the call would look like it worked.
+  const unknown = Object.keys(input).filter((key) => !allowed.includes(key));
+  if (unknown.length) throw new Error(`update_entry doesn't take ${unknown.join(", ")}. It takes ${allowed.join(", ")}.`);
+  const entryId = uuid(input.entryId, "entryId", "list_entries or running_timers");
+  const body = {};
+  if (input.task !== undefined) {
+    if (typeof input.task !== "string") throw new Error("task must be a string.");
+    // An empty task clears it.
+    body.task = input.task.trim();
+  }
+  if (input.projectId !== undefined) body.projectId = uuid(input.projectId, "projectId", "list_projects");
+  for (const name of ["startedAt", "endedAt"]) {
+    const value = input[name];
+    if (value === undefined) continue;
+    if (typeof value !== "string" || !INSTANT.test(value) || Number.isNaN(Date.parse(value))) {
+      throw new Error(`${name} must be an ISO 8601 time with a timezone offset, like 2026-10-08T09:00:00+02:00.`);
+    }
+    body[name] = new Date(value).toISOString();
+  }
+  if (Object.keys(body).length === 0) throw new Error("Pass at least one of task, projectId, startedAt and endedAt.");
+  const [entry, list] = await Promise.all([api(`/time-entries/${entryId}`, { method: "PATCH", body }), api("/projects")]);
+  void refresh();
+  void wings.broadcast({ type: "timers-changed" });
+  return { updated: true, entry: entryInfo(entry, new Map(list.map((p) => [p.id, p]))) };
+});
+
+wings.onTool("delete_entry", async ({ entryId }) => {
+  const id = uuid(entryId, "entryId", "list_entries or running_timers");
+  await api(`/time-entries/${id}`, { method: "DELETE" });
+  void refresh();
+  void wings.broadcast({ type: "timers-changed" });
+  return { deleted: true, entryId: id };
+});
