@@ -1,20 +1,15 @@
 {
   "id": "cyclops",
   "name": "Cyclops",
-  "version": "0.1.0",
-  "description": "Opens the Cyclops time tracker from a clock button in the title bar.",
+  "version": "0.2.0",
+  "description": "Track time in Cyclops from a sidebar: start and stop timers and see this week's entries.",
   "api": 1,
   "main": "main.js",
+  "permissions": {
+    "fetch": ["https://cyclops-api.prototyp.digital/api/"],
+    "openUrl": ["https://cyclops.prototyp.digital/"]
+  },
   "contributes": {
-    "panels": [
-      {
-        "id": "tracker",
-        "title": "Cyclops",
-        "icon": "clock",
-        "url": "https://cyclops.prototyp.digital/",
-        "width": 480,
-        "height": 720
-      }
-    ]
+    "sidebars": [{ "id": "tracker", "title": "Cyclops", "icon": "clock", "page": "sidebar.html" }]
   }
 }

@@ -1,6 +1,10 @@
 # Cyclops for Wings
 
-Adds a clock button to the Wings title bar that opens the Cyclops time tracker in a popover. Sign in with Google there once and it remembers you.
+Adds a clock button to the Wings title bar that opens Cyclops in the right sidebar. Start and stop timers, resume today's entries, and see today's and this week's totals. While a timer runs, the button shows how long.
+
+## Connect
+
+The sidebar asks for a personal API token. Make one in Cyclops under Settings, API tokens (the sidebar has a button that opens it), and paste it in. Wings keeps it in your keychain and adds it to requests itself, so the plugin's code never holds it. Sign out removes it from this Mac. Revoke it in Cyclops Settings to stop it working anywhere.
 
 ## Install
 
@@ -14,4 +18,4 @@ Then turn it on in Plugins.
 
 ## Release
 
-Bump `version` in `wings-plugin.json`, commit, and push a matching tag like `v0.2.0`. The workflow attaches `cyclops.wings-plugin` to a GitHub release.
+Bump `version` in `wings-plugin.json`, commit, and push a matching tag like `v0.3.0`. The workflow attaches `cyclops.wings-plugin` to a GitHub release.
