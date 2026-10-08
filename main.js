@@ -1,4 +1,6 @@
-// Keeps the running timer on the clock button while the sidebar is closed, and runs the tools Claude calls.
+// Keeps the running timer on the clock button, with details when you point at it, and runs the tools Claude
+// calls. The sidebar and this script tell each other about changes with wings.broadcast, so a timer started
+// in one shows in the other at once. Changes made on the Cyclops website show on the next 30 s poll.
 
 const API = "https://cyclops-api.prototyp.digital/api";
 
@@ -22,22 +24,49 @@ async function api(path, { method = "GET", body } = {}, retried = false) {
   return data;
 }
 
-async function runningLabel() {
-  if (!(await wings.secrets.has("token"))) return null;
-  const timers = await api("/time-entries/timers");
-  if (timers.length === 0) return null;
-  const startedAt = Math.min(...timers.map((t) => Date.parse(t.startedAt)));
-  const minutes = Math.floor((Date.now() - startedAt) / 60_000);
-  return `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, "0")}`;
+/** Projects by id, loaded when a timer's project isn't known yet. @type {Map<string, any> | null} */
+let projects = null;
+const today = () => new Intl.DateTimeFormat("en-CA").format(new Date());
+const clockTime = (iso) => new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
+function duration(minutes) {
+  const h = Math.floor(minutes / 60);
+  const m = Math.round(minutes % 60);
+  return h ? `${h}h ${m}m` : `${m}m`;
 }
 
 async function refresh() {
   try {
-    await wings.setSidebarLabel("tracker", await runningLabel());
+    if (!(await wings.secrets.has("token"))) return void (await wings.setSidebarLabel("tracker", null));
+    const timers = await api("/time-entries/timers");
+    if (timers.length === 0) return void (await wings.setSidebarLabel("tracker", null));
+    const [entries] = await Promise.all([
+      api(`/time-entries?from=${today()}&to=${today()}`),
+      projects && timers.every((t) => projects?.has(t.projectId)) ? null : api("/projects").then((list) => (projects = new Map(list.map((p) => [p.id, p])))),
+    ]);
+    const first = timers.reduce((a, b) => (Date.parse(a.startedAt) <= Date.parse(b.startedAt) ? a : b));
+    const since = (t) => (Date.now() - Date.parse(t.startedAt)) / 60_000;
+    const logged = entries.filter((e) => e.endedAt).reduce((n, e) => n + (e.durationMinutes ?? 0), 0);
+    const running = timers.reduce((n, t) => n + since(t), 0);
+    const project = projects?.get(first.projectId);
+    const minutes = Math.floor(since(first));
+    await wings.setSidebarLabel("tracker", `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, "0")}`, {
+      rows: [
+        ...(timers.length > 1 ? [{ label: "Running", value: `${timers.length} timers` }] : []),
+        { label: "Task", value: first.task || "No description" },
+        { label: "Project", value: project ? `${project.name} · ${project.clientName}` : "Unknown project" },
+        { label: "Started", value: clockTime(first.startedAt) },
+        { label: "Today", value: duration(logged + running) },
+      ],
+    });
   } catch (error) {
     console.error(error);
   }
 }
+
+// The sidebar started, stopped or resumed a timer, or connected or signed out.
+wings.onBroadcast((message) => {
+  if (message?.type === "timers-changed") void refresh();
+});
 
 void refresh();
 // Two requests a minute stay far below Cyclops's limit of 100 per token.
@@ -71,6 +100,7 @@ wings.onTool("start_timer", async ({ projectId, task }) => {
   const text = typeof task === "string" ? task.trim() : "";
   const timer = await api("/time-entries/timer", { method: "POST", body: text ? { projectId, task: text } : { projectId } });
   void refresh();
+  void wings.broadcast({ type: "timers-changed" });
   return { started: true, timerId: timer?.id ?? null, projectId, task: text || null };
 });
 
@@ -84,5 +114,6 @@ wings.onTool("stop_timer", async ({ timerId }) => {
   }
   await api(`/time-entries/${encodeURIComponent(id)}/stop`, { method: "POST" });
   void refresh();
+  void wings.broadcast({ type: "timers-changed" });
   return { stopped: true, timerId: id };
 });

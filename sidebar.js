@@ -123,7 +123,6 @@ async function refresh() {
   state.week = week;
   remember([...timers, ...week]);
   if (!state.projectId) state.projectId = timers[0]?.projectId ?? week[0]?.projectId ?? state.projects[0]?.id ?? "";
-  void wings.setSidebarLabel("tracker", label());
 }
 
 /** Runs an action with its button showing progress, then reloads. @param {string} key @param {() => Promise<unknown>} task */
@@ -132,6 +131,8 @@ async function act(key, task) {
   set({ error: null });
   try {
     await task();
+    // The main script keeps the title bar button current.
+    void wings.broadcast({ type: "timers-changed" });
     await refresh();
   } catch (error) {
     if (error instanceof SignedOut) return set({ phase: "connect", error: "Cyclops didn't accept the saved token. Connect again." });
@@ -140,12 +141,6 @@ async function act(key, task) {
     state.busy.delete(key);
     render();
   }
-}
-
-function label() {
-  if (state.timers.length === 0) return null;
-  const minutes = Math.floor(Math.max(...state.timers.map((t) => (Date.now() - Date.parse(t.startedAt)) / 60_000)));
-  return `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, "0")}`;
 }
 
 // ---------- rendering ----------
@@ -480,7 +475,7 @@ function render() {
             title: "Removes the token from this Mac. It stays valid until you revoke it in Cyclops Settings.",
             onclick: async () => {
               await wings.secrets.delete("token");
-              void wings.setSidebarLabel("tracker", null);
+              void wings.broadcast({ type: "timers-changed" });
               set({ phase: "connect", me: null, timers: [], week: [] });
             },
           },
@@ -510,6 +505,11 @@ setInterval(() => {
 setInterval(() => {
   if (state.phase === "ready" && state.busy.size === 0) void refresh().then(render, () => {});
 }, 60_000);
+
+// Claude started or stopped a timer through the plugin's tools.
+wings.onBroadcast((message) => {
+  if (/** @type {any} */ (message)?.type === "timers-changed" && state.phase === "ready") void refresh().then(render, () => {});
+});
 
 render();
 void load();

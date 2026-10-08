@@ -1,7 +1,7 @@
 {
   "id": "cyclops",
   "name": "Cyclops",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Track time in Cyclops from a sidebar, and let Claude start and stop timers.",
   "api": 1,
   "main": "main.js",
