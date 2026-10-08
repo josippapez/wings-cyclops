@@ -1,15 +1,83 @@
 {
   "id": "cyclops",
   "name": "Cyclops",
-  "version": "0.2.0",
-  "description": "Track time in Cyclops from a sidebar: start and stop timers and see this week's entries.",
+  "version": "0.3.0",
+  "description": "Track time in Cyclops from a sidebar, and let Claude start and stop timers.",
   "api": 1,
   "main": "main.js",
   "permissions": {
-    "fetch": ["https://cyclops-api.prototyp.digital/api/"],
-    "openUrl": ["https://cyclops.prototyp.digital/"]
+    "fetch": [
+      "https://cyclops-api.prototyp.digital/api/"
+    ],
+    "openUrl": [
+      "https://cyclops.prototyp.digital/"
+    ]
   },
   "contributes": {
-    "sidebars": [{ "id": "tracker", "title": "Cyclops", "icon": "clock", "page": "sidebar.html" }]
+    "sidebars": [
+      {
+        "id": "tracker",
+        "title": "Cyclops",
+        "icon": "clock",
+        "page": "sidebar.html"
+      }
+    ],
+    "mcpTools": [
+      {
+        "name": "list_projects",
+        "description": "Lists the Cyclops projects you can track time on, with each project's id and client.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        }
+      },
+      {
+        "name": "running_timers",
+        "description": "Lists your running Cyclops timers with their id, project, task and start time.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        }
+      },
+      {
+        "name": "start_timer",
+        "description": "Starts a Cyclops timer. Get the projectId from list_projects.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "projectId": {
+              "type": "string",
+              "format": "uuid",
+              "description": "The project to track time on"
+            },
+            "task": {
+              "type": "string",
+              "maxLength": 2000,
+              "description": "What you're working on"
+            }
+          },
+          "required": [
+            "projectId"
+          ],
+          "additionalProperties": false
+        }
+      },
+      {
+        "name": "stop_timer",
+        "description": "Stops your running Cyclops timer. Pass timerId when more than one runs.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "timerId": {
+              "type": "string",
+              "description": "The timer to stop, from running_timers"
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    ]
   }
 }
