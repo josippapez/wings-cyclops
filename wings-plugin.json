@@ -1,0 +1,20 @@
+{
+  "id": "cyclops",
+  "name": "Cyclops",
+  "version": "0.1.0",
+  "description": "Opens the Cyclops time tracker from a clock button in the title bar.",
+  "api": 1,
+  "main": "main.js",
+  "contributes": {
+    "panels": [
+      {
+        "id": "tracker",
+        "title": "Cyclops",
+        "icon": "clock",
+        "url": "https://cyclops.prototyp.digital/",
+        "width": 480,
+        "height": 720
+      }
+    ]
+  }
+}
