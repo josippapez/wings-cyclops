@@ -71,6 +71,58 @@
   color: var(--wings-muted);
 }
 
+/* The week's range and arrows, and a button for each day. */
+.week {
+  gap: 2px;
+}
+.range {
+  padding: 0 4px;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.days {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 2px;
+}
+button.day {
+  flex-direction: column;
+  gap: 1px;
+  height: auto;
+  min-width: 0;
+  padding: 6px 0;
+  border-color: transparent;
+  background: transparent;
+  font-weight: 400;
+}
+button.day:hover {
+  background: var(--wings-hover);
+}
+button.day[aria-pressed="true"] {
+  border-color: var(--wings-hairline-strong);
+  background: var(--wings-pressed);
+}
+.day .name {
+  font-size: 11px;
+  color: var(--wings-muted);
+  white-space: nowrap;
+}
+.day[aria-pressed="true"] .name {
+  color: var(--wings-fg);
+}
+.day[aria-current="date"] .name {
+  color: var(--wings-fg);
+  font-weight: 600;
+}
+.day .total {
+  min-height: 17px;
+  font-size: 11px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .entries {
   list-style: none;
   margin: 0;
@@ -148,6 +200,10 @@ button.icon svg {
 button[aria-disabled="true"] {
   opacity: 0.5;
   cursor: default;
+  transform: none;
+}
+button.ghost[aria-disabled="true"]:hover {
+  background: transparent;
 }
 
 /* Editing and deleting, in place of an entry. */

@@ -12,8 +12,11 @@ class SignedOut extends Error {}
 
 /** @typedef {{ task: string, projectIds: string[], lastUsedAt: number }} Suggestion */
 /** An entry being edited, with its times as HH:MM on `day` in the user's timezone. @typedef {{ id: string, running: boolean, day: string, task: string, projectId: string, start: string, end: string }} Draft */
-/** @type {{ phase: "loading" | "connect" | "ready", me: any, projects: any[], timers: any[], week: any[], history: Map<string, Suggestion>, error: string | null, busy: Set<string>, task: string, projectId: string, editing: Draft | null, confirming: string | null }} */
-const state = { phase: "loading", me: null, projects: [], timers: [], week: [], history: new Map(), error: null, busy: new Set(), task: "", projectId: "", editing: null, confirming: null };
+/**
+ * `weeks` holds each week's entries by its Monday, once loaded. `day` is the day being looked at, or null to follow today.
+ * @type {{ phase: "loading" | "connect" | "ready", me: any, projects: any[], timers: any[], weeks: Map<string, any[]>, day: string | null, weekError: { week: string, message: string } | null, history: Map<string, Suggestion>, error: string | null, busy: Set<string>, task: string, projectId: string, editing: Draft | null, confirming: string | null }}
+ */
+const state = { phase: "loading", me: null, projects: [], timers: [], weeks: new Map(), day: null, weekError: null, history: new Map(), error: null, busy: new Set(), task: "", projectId: "", editing: null, confirming: null };
 
 // ---------- API ----------
 
@@ -50,13 +53,27 @@ const tz = () => state.me?.timezone || "Europe/Zagreb";
 /** YYYY-MM-DD in the user's timezone. @param {Date} date */
 const dayOf = (date) => new Intl.DateTimeFormat("en-CA", { timeZone: tz() }).format(date);
 const today = () => dayOf(new Date());
-/** Monday of this week, or of a week before it. */
-function weekStart(weeksBack = 0) {
-  const [y, m, d] = today().split("-").map(Number);
-  const date = new Date(Date.UTC(y, m - 1, d));
-  date.setUTCDate(date.getUTCDate() - ((date.getUTCDay() + 6) % 7) - 7 * weeksBack);
-  return date.toISOString().slice(0, 10);
+/** @param {string} day YYYY-MM-DD @param {number} n */
+function addDays(day, n) {
+  const [y, m, d] = day.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
 }
+/** The Monday of a day's week. @param {string} day YYYY-MM-DD */
+const mondayOf = (day) => addDays(day, -((new Date(`${day}T00:00:00Z`).getUTCDay() + 6) % 7));
+/** Monday of this week, or of a week before it. */
+const weekStart = (weeksBack = 0) => addDays(mondayOf(today()), -7 * weeksBack);
+/** A YYYY-MM-DD day in words. It's a day in the user's timezone already, so it's formatted as UTC. @param {string} day @param {Intl.DateTimeFormatOptions} options */
+const dayLabel = (day, options) => new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", ...options }).format(new Date(`${day}T00:00:00Z`));
+/** "5 Oct – 11 Oct", with the years when the week isn't in this one, as in the Cyclops web app. @param {string} monday */
+function weekRange(monday) {
+  const sunday = addDays(monday, 6);
+  const year = today().slice(0, 4);
+  /** @type {Intl.DateTimeFormatOptions} */
+  const options = { day: "numeric", month: "short", year: monday.startsWith(year) && sunday.startsWith(year) ? undefined : "numeric" };
+  return `${dayLabel(monday, options)} – ${dayLabel(sunday, options)}`;
+}
+/** "Today", or a day like "Wed 7 Oct". @param {string} day */
+const dayName = (day) => (day === today() ? "Today" : dayLabel(day, { weekday: "short", day: "numeric", month: "short", year: day.startsWith(today().slice(0, 4)) ? undefined : "numeric" }));
 /** @param {string} iso */
 const clockTime = (iso) => new Intl.DateTimeFormat("en-GB", { timeZone: tz(), hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
 /** @param {number} minutes */
@@ -71,11 +88,6 @@ function elapsed(startedAt) {
   return [Math.floor(s / 3600), Math.floor((s % 3600) / 60), s % 60].map((n) => String(n).padStart(2, "0")).join(":");
 }
 const runningMinutes = () => state.timers.reduce((sum, t) => sum + (Date.now() - Date.parse(t.startedAt)) / 60_000, 0);
-/** @param {string} day YYYY-MM-DD */
-function nextDay(day) {
-  const [y, m, d] = day.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
-}
 /** How far the user's timezone is ahead of UTC at an instant, in ms. @param {number} t */
 function offsetAt(t) {
   const parts = new Intl.DateTimeFormat("en-US", { timeZone: tz(), hourCycle: "h23", year: "numeric", month: "numeric", day: "numeric", hour: "numeric", minute: "numeric", second: "numeric" }).formatToParts(t);
@@ -139,12 +151,56 @@ function suggest(query, projectId) {
     .slice(0, 8);
 }
 
-async function refresh() {
-  const [timers, week] = await Promise.all([api("/time-entries/timers"), api(`/time-entries?from=${weekStart()}&to=${today()}`)]);
+const selectedDay = () => state.day ?? today();
+const shownWeek = () => mondayOf(selectedDay());
+/** @param {string} monday */
+const weekPath = (monday) => `/time-entries?from=${monday}&to=${addDays(monday, 6)}`;
+
+/** Reloads the timers and this week, and with `shown` also the earlier week on screen. */
+async function refresh(shown = false) {
+  const current = weekStart();
+  // A week that isn't loaded yet is loadWeek's to fetch.
+  const other = shown && shownWeek() !== current && state.weeks.has(shownWeek()) ? shownWeek() : null;
+  const [timers, week, older] = await Promise.all([api("/time-entries/timers"), api(weekPath(current)), other ? api(weekPath(other)) : null]);
   state.timers = timers;
-  state.week = week;
-  remember([...timers, ...week]);
+  state.weeks.set(current, week);
+  if (other) state.weeks.set(other, older);
+  remember([...timers, ...week, ...(older ?? [])]);
   if (!state.projectId) state.projectId = timers[0]?.projectId ?? week[0]?.projectId ?? state.projects[0]?.id ?? "";
+}
+
+/** The Monday being fetched. One week loads at a time, so clicking quickly through weeks only asks for the one you stop on. @type {string | null} */
+let loadingWeek = null;
+
+/** Fetches the week on screen unless it's loaded, or failed until you try again. */
+async function loadWeek() {
+  const monday = shownWeek();
+  if (loadingWeek || state.weeks.has(monday) || state.weekError?.week === monday) return;
+  loadingWeek = monday;
+  try {
+    const entries = await api(weekPath(monday));
+    state.weeks.set(monday, entries);
+    remember(entries);
+  } catch (error) {
+    if (error instanceof SignedOut) return set({ phase: "connect", error: "Cyclops didn't accept the saved token. Connect again." });
+    state.weekError = { week: monday, message: String(error.message ?? error) };
+  } finally {
+    loadingWeek = null;
+  }
+  render();
+  // You may have moved to another week while this one loaded.
+  void loadWeek();
+}
+
+/** Shows a day, or today for null, and loads its week. @param {string | null} day */
+function show(day) {
+  state.day = day && day < today() ? day : null;
+  state.weekError = null;
+  // An entry being edited or deleted goes off screen. A running timer's stays.
+  if (state.editing && !state.editing.running) state.editing = null;
+  if (state.confirming && !state.timers.some((t) => t.id === state.confirming)) state.confirming = null;
+  render();
+  void loadWeek();
 }
 
 /** Runs an action with its button showing progress, then reloads. @param {string} key @param {() => Promise<unknown>} task */
@@ -155,7 +211,7 @@ async function act(key, task) {
     await task();
     // The main script keeps the title bar button current.
     void wings.broadcast({ type: "timers-changed" });
-    await refresh();
+    await refresh(true);
   } catch (error) {
     if (error instanceof SignedOut) return set({ phase: "connect", error: "Cyclops didn't accept the saved token. Connect again." });
     state.error = String(error.message ?? error);
@@ -195,10 +251,12 @@ const projectName = (id) => {
 const projectLine = (id) => h("div", { class: "project" }, h("span", {}, projectName(id)));
 
 const SVG = "http://www.w3.org/2000/svg";
-/** The Cyclops web app's row icons. */
+/** The Cyclops web app's row icons, and arrows for the weeks. */
 const ICONS = {
   resume: { size: 12, stroke: 1, paths: ["M9.79363 5.14742L3.77252 1.45752C3.10619 1.04918 2.25 1.52866 2.25 2.31015V9.68987C2.25 10.4714 3.10618 10.9508 3.77251 10.5425L9.79362 6.85269C10.4303 6.46254 10.4303 5.53758 9.79363 5.14742Z"] },
   edit: { size: 12, stroke: 1, paths: ["M10.161 1.83896C10.92 2.59796 10.92 3.82996 10.161 4.58896L5.38 9.36997C5.131 9.61897 4.821 9.79798 4.481 9.88798L1.25 10.75L2.112 7.51896C2.203 7.17896 2.381 6.86897 2.63 6.61997L7.411 1.83896C8.17 1.07996 9.402 1.07996 10.161 1.83896Z"] },
+  previous: { size: 12, stroke: 1.25, paths: ["M7.5 2.5L4 6L7.5 9.5"] },
+  next: { size: 12, stroke: 1.25, paths: ["M4.5 2.5L8 6L4.5 9.5"] },
   delete: {
     size: 18,
     stroke: 1.5,
@@ -312,7 +370,7 @@ function closeEdit(id) {
 /** The draft's start and end. An end at or before the start is on the next day, as in the Cyclops web app. @param {Draft} draft */
 function range(draft) {
   const start = draft.start ? atTime(draft.day, draft.start) : null;
-  const end = draft.start && draft.end ? atTime(draft.end <= draft.start ? nextDay(draft.day) : draft.day, draft.end) : null;
+  const end = draft.start && draft.end ? atTime(draft.end <= draft.start ? addDays(draft.day, 1) : draft.day, draft.end) : null;
   return { start, end };
 }
 
@@ -655,26 +713,86 @@ function renderStart() {
   );
 }
 
+/** Minutes logged on a day, in the week's entries. A running timer counts towards today. @param {any[]} entries @param {string} day */
+const minutesOn = (entries, day) => entries.reduce((n, e) => n + (e.endedAt && e.entryDate === day ? (e.durationMinutes ?? 0) : 0), 0) + (day === today() ? runningMinutes() : 0);
+
+/** The week's range with arrows, and a button for each of its days with its total. */
+function renderWeek() {
+  const monday = shownWeek();
+  const selected = selectedDay();
+  const now = today();
+  const current = monday === weekStart();
+  const entries = state.weeks.get(monday);
+  return h(
+    "section",
+    { class: "stack", "aria-label": "Week" },
+    h(
+      "div",
+      { class: "row week" },
+      iconButton("previous", "Previous week", { id: "week-previous", onclick: () => show(addDays(selected, -7)) }),
+      h("h2", { class: "range" }, weekRange(monday)),
+      // aria-disabled rather than disabled, as in the Cyclops web app, so focus stays on the button that got you here.
+      iconButton("next", "Next week", { id: "week-next", "aria-disabled": current ? "true" : null, onclick: () => current || show(addDays(selected, 7)) }),
+      h("span", { class: "grow" }),
+      h("button", { class: "ghost", type: "button", id: "week-today", "aria-disabled": selected === now ? "true" : null, onclick: () => selected === now || show(null) }, "Today"),
+    ),
+    h(
+      "div",
+      { class: "days" },
+      ...Array.from({ length: 7 }, (_, i) => {
+        const day = addDays(monday, i);
+        const future = day > now;
+        const minutes = entries && !future ? minutesOn(entries, day) : null;
+        // h:mm, like the title bar, so ten hours and more fit a 360 px sidebar.
+        const total = minutes === null ? "" : minutes ? `${Math.floor(Math.round(minutes) / 60)}:${String(Math.round(minutes) % 60).padStart(2, "0")}` : "–";
+        return h(
+          "button",
+          {
+            class: "day",
+            type: "button",
+            id: `day-${day}`,
+            "aria-pressed": String(day === selected),
+            "aria-current": day === now ? "date" : null,
+            "aria-label": `${dayLabel(day, { weekday: "long", day: "numeric", month: "long" })}${minutes === null ? "" : `, ${minutes ? duration(minutes) : "nothing logged"}`}`,
+            disabled: future,
+            onclick: () => day === selected || show(day),
+          },
+          h("span", { class: "name" }, dayLabel(day, { weekday: "short", day: "numeric" })),
+          h("span", { class: minutes ? "total" : "total muted" }, total),
+        );
+      }),
+    ),
+  );
+}
+
 function renderEntries() {
-  const day = today();
-  const done = state.week.filter((e) => e.endedAt);
-  const todays = done.filter((e) => e.entryDate === day);
+  const day = selectedDay();
+  const monday = shownWeek();
+  const week = state.weeks.get(monday);
+  const current = monday === weekStart();
+  if (!week) {
+    const failed = state.weekError?.week === monday ? state.weekError : null;
+    return failed
+      ? h("div", { class: "row" }, h("p", { class: "grow error", role: "alert" }, `Couldn't load this week. ${failed.message}`), h("button", { class: "ghost", type: "button", id: "week-retry", onclick: () => show(state.day) }, "Try again"))
+      : h("div", { class: "row muted" }, h("span", { class: "spinner", "aria-hidden": true }), "Loading the week…");
+  }
+  const done = week.filter((e) => e.endedAt);
+  const listed = done.filter((e) => e.entryDate === day);
   const sum = (list) => list.reduce((n, e) => n + (e.durationMinutes ?? 0), 0);
-  const running = runningMinutes();
   return h(
     "section",
     { class: "stack" },
-    h("div", { class: "section-title" }, h("span", {}, "Today"), h("span", { id: "today-total" }, duration(sum(todays) + running))),
-    todays.length === 0
-      ? h("p", { class: "muted" }, "Nothing logged today yet.")
+    h("h3", { class: "section-title" }, h("span", {}, dayName(day)), h("span", { id: "day-total" }, duration(minutesOn(week, day)))),
+    listed.length === 0
+      ? h("p", { class: "muted" }, day === today() ? "Nothing logged today yet." : `Nothing logged on ${dayName(day)}.`)
       : h(
           "ul",
           { class: "entries" },
-          ...todays.map((e, i) => {
+          ...listed.map((e, i) => {
             if (state.editing?.id === e.id) return h("li", { class: "entry editing" }, renderEdit(e));
             // Once this row is gone, focus moves to the same button on the next one.
-            const neighbour = todays[i + 1] ?? todays[i - 1];
-            if (state.confirming === e.id) return h("li", { class: "entry" }, renderConfirm(e, "Delete this entry?", "Cancel", neighbour ? `delete-${neighbour.id}` : "task"));
+            const neighbour = listed[i + 1] ?? listed[i - 1];
+            if (state.confirming === e.id) return h("li", { class: "entry" }, renderConfirm(e, "Delete this entry?", "Cancel", neighbour ? `delete-${neighbour.id}` : `day-${day}`));
             const key = `resume:${e.id}`;
             const name = e.task || "entry";
             return h(
@@ -696,7 +814,7 @@ function renderEntries() {
             );
           }),
         ),
-    h("div", { class: "section-title" }, h("span", {}, "This week"), h("span", { id: "week-total" }, duration(sum(done) + running))),
+    h("div", { class: "section-title" }, h("span", {}, current ? "This week" : weekRange(monday)), h("span", { id: "week-total" }, duration(sum(done) + (current ? runningMinutes() : 0)))),
   );
 }
 
@@ -724,7 +842,7 @@ function render() {
             onclick: async () => {
               await wings.secrets.delete("token");
               void wings.broadcast({ type: "timers-changed" });
-              set({ phase: "connect", me: null, timers: [], week: [] });
+              set({ phase: "connect", me: null, timers: [], weeks: new Map(), day: null, weekError: null });
             },
           },
           "Sign out",
@@ -732,6 +850,7 @@ function render() {
       ),
       ...state.timers.map(renderTimer),
       renderStart(),
+      renderWeek(),
       renderEntries(),
     );
   }
@@ -755,9 +874,12 @@ setInterval(() => {
   if (state.phase === "ready" && state.busy.size === 0 && !state.editing) void refresh().then(render, () => {});
 }, 60_000);
 
-// Claude started or stopped a timer through the plugin's tools.
+// Claude started or stopped a timer, or changed or deleted an entry, through the plugin's tools. The entry may be
+// in any week, so earlier weeks load again when you next go to them.
 wings.onBroadcast((message) => {
-  if (/** @type {any} */ (message)?.type === "timers-changed" && state.phase === "ready") void refresh().then(render, () => {});
+  if (/** @type {any} */ (message)?.type !== "timers-changed" || state.phase !== "ready") return;
+  for (const monday of state.weeks.keys()) if (monday !== weekStart() && monday !== shownWeek()) state.weeks.delete(monday);
+  void refresh(true).then(render, () => {});
 });
 
 render();

@@ -1,6 +1,8 @@
 # Cyclops for Wings
 
-Adds a clock button to the Wings title bar that opens Cyclops in the right sidebar. Start and stop timers, resume, edit and delete today's entries and running timers, and see today's and this week's totals. While a timer runs, the button shows how long.
+Adds a clock button to the Wings title bar that opens Cyclops in the right sidebar. Start and stop timers, resume, edit and delete entries and running timers, and see each day's and week's totals. While a timer runs, the button shows how long.
+
+The arrows above the entries move a week back or forward, and each day's button shows that day's entries and total. Today brings you back. This week reloads every minute, and an earlier week loads once, when you first go to it.
 
 ## Connect
 
