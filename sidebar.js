@@ -14,9 +14,10 @@ class SignedOut extends Error {}
 /** An entry being edited, with its times as HH:MM on `day` in the user's timezone. @typedef {{ id: string, running: boolean, day: string, task: string, projectId: string, start: string, end: string }} Draft */
 /**
  * `weeks` holds each week's entries by its Monday, once loaded. `day` is the day being looked at, or null to follow today.
- * @type {{ phase: "loading" | "connect" | "ready", me: any, projects: any[], timers: any[], weeks: Map<string, any[]>, day: string | null, weekError: { week: string, message: string } | null, history: Map<string, Suggestion>, error: string | null, busy: Set<string>, task: string, projectId: string, editing: Draft | null, confirming: string | null }}
+ * `wholeWeek` lists every day of that day's week instead, like the Cyclops web app.
+ * @type {{ phase: "loading" | "connect" | "ready", me: any, projects: any[], timers: any[], weeks: Map<string, any[]>, day: string | null, wholeWeek: boolean, weekError: { week: string, message: string } | null, history: Map<string, Suggestion>, error: string | null, busy: Set<string>, task: string, projectId: string, editing: Draft | null, confirming: string | null }}
  */
-const state = { phase: "loading", me: null, projects: [], timers: [], weeks: new Map(), day: null, weekError: null, history: new Map(), error: null, busy: new Set(), task: "", projectId: "", editing: null, confirming: null };
+const state = { phase: "loading", me: null, projects: [], timers: [], weeks: new Map(), day: null, wholeWeek: false, weekError: null, history: new Map(), error: null, busy: new Set(), task: "", projectId: "", editing: null, confirming: null };
 
 // ---------- API ----------
 
@@ -734,7 +735,18 @@ function renderWeek() {
       // aria-disabled rather than disabled, as in the Cyclops web app, so focus stays on the button that got you here.
       iconButton("next", "Next week", { id: "week-next", "aria-disabled": current ? "true" : null, onclick: () => current || show(addDays(selected, 7)) }),
       h("span", { class: "grow" }),
-      h("button", { class: "ghost", type: "button", id: "week-today", "aria-disabled": selected === now ? "true" : null, onclick: () => selected === now || show(null) }, "Today"),
+      h("button", { class: "ghost", type: "button", id: "week-all", "aria-pressed": String(state.wholeWeek), onclick: () => ((state.wholeWeek = !state.wholeWeek), show(state.day)) }, "Week"),
+      h(
+        "button",
+        {
+          class: "ghost",
+          type: "button",
+          id: "week-today",
+          "aria-disabled": selected === now && !state.wholeWeek ? "true" : null,
+          onclick: () => (selected === now && !state.wholeWeek) || ((state.wholeWeek = false), show(null)),
+        },
+        "Today",
+      ),
     ),
     h(
       "div",
@@ -751,11 +763,11 @@ function renderWeek() {
             class: "day",
             type: "button",
             id: `day-${day}`,
-            "aria-pressed": String(day === selected),
+            "aria-pressed": String(day === selected && !state.wholeWeek),
             "aria-current": day === now ? "date" : null,
             "aria-label": `${dayLabel(day, { weekday: "long", day: "numeric", month: "long" })}${minutes === null ? "" : `, ${minutes ? duration(minutes) : "nothing logged"}`}`,
             disabled: future,
-            onclick: () => day === selected || show(day),
+            onclick: () => (day === selected && !state.wholeWeek) || ((state.wholeWeek = false), show(day)),
           },
           h("span", { class: "name" }, dayLabel(day, { weekday: "short", day: "numeric" })),
           h("span", { class: minutes ? "total" : "total muted" }, total),
@@ -765,24 +777,17 @@ function renderWeek() {
   );
 }
 
-function renderEntries() {
-  const day = selectedDay();
-  const monday = shownWeek();
-  const week = state.weeks.get(monday);
-  const current = monday === weekStart();
-  if (!week) {
-    const failed = state.weekError?.week === monday ? state.weekError : null;
-    return failed
-      ? h("div", { class: "row" }, h("p", { class: "grow error", role: "alert" }, `Couldn't load this week. ${failed.message}`), h("button", { class: "ghost", type: "button", id: "week-retry", onclick: () => show(state.day) }, "Try again"))
-      : h("div", { class: "row muted" }, h("span", { class: "spinner", "aria-hidden": true }), "Loading the week…");
-  }
-  const done = week.filter((e) => e.endedAt);
+/** The shown week's days that have entries, newest first, or the selected day when there are none. @param {any[]} week */
+function weekDays(week) {
+  const days = [...new Set(week.filter((e) => e.endedAt).map((e) => e.entryDate))].sort().reverse();
+  return days.length ? days : [selectedDay()];
+}
+
+/** A day's heading and total over its entries. @param {any[]} week @param {string} day @param {any[]} done */
+function daySection(week, day, done) {
   const listed = done.filter((e) => e.entryDate === day);
-  const sum = (list) => list.reduce((n, e) => n + (e.durationMinutes ?? 0), 0);
-  return h(
-    "section",
-    { class: "stack" },
-    h("h3", { class: "section-title" }, h("span", {}, dayName(day)), h("span", { id: "day-total" }, duration(minutesOn(week, day)))),
+  return [
+    h("h3", { class: "section-title" }, h("span", {}, dayName(day)), h("span", {}, duration(minutesOn(week, day)))),
     listed.length === 0
       ? h("p", { class: "muted" }, day === today() ? "Nothing logged today yet." : `Nothing logged on ${dayName(day)}.`)
       : h(
@@ -814,6 +819,26 @@ function renderEntries() {
             );
           }),
         ),
+  ];
+}
+
+function renderEntries() {
+  const day = selectedDay();
+  const monday = shownWeek();
+  const week = state.weeks.get(monday);
+  const current = monday === weekStart();
+  if (!week) {
+    const failed = state.weekError?.week === monday ? state.weekError : null;
+    return failed
+      ? h("div", { class: "row" }, h("p", { class: "grow error", role: "alert" }, `Couldn't load this week. ${failed.message}`), h("button", { class: "ghost", type: "button", id: "week-retry", onclick: () => show(state.day) }, "Try again"))
+      : h("div", { class: "row muted" }, h("span", { class: "spinner", "aria-hidden": true }), "Loading the week…");
+  }
+  const done = week.filter((e) => e.endedAt);
+  const sum = (list) => list.reduce((n, e) => n + (e.durationMinutes ?? 0), 0);
+  return h(
+    "section",
+    { class: "stack" },
+    ...(state.wholeWeek ? weekDays(week) : [day]).flatMap((d) => daySection(week, d, done)),
     h("div", { class: "section-title" }, h("span", {}, current ? "This week" : weekRange(monday)), h("span", { id: "week-total" }, duration(sum(done) + (current ? runningMinutes() : 0)))),
   );
 }

@@ -1,7 +1,7 @@
 {
   "id": "cyclops",
   "name": "Cyclops",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Track, edit and delete time in Cyclops from a sidebar, and let Claude do the same.",
   "api": 1,
   "main": "main.js",
