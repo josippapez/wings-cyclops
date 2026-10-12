@@ -23,14 +23,15 @@ With Wings connected to Claude Code (Plugins, Claude Code, Connect), Claude gets
 
 ## Install
 
-Make the package and drop it on the Wings window, or pick it under Plugins, Choose a file:
+The code is TypeScript and React in `src/`, built with [wings-plugin-sdk](https://www.npmjs.com/package/wings-plugin-sdk); the repo holds only source. Build the package:
 
 ```sh
-git archive --format=zip --output cyclops.wings-plugin HEAD
+npm install
+npm run check   # type-checks, then writes cyclops.wings-plugin
 ```
 
-Then turn it on in Plugins.
+Drop `cyclops.wings-plugin` on the Wings window, or pick it under Plugins, Choose a file, then turn it on in Plugins.
 
 ## Release
 
-Bump `version` in `wings-plugin.json`, commit, and push a matching tag like `v0.3.0`. The workflow attaches `cyclops.wings-plugin` to a GitHub release.
+Bump `version` in `wings-plugin.json`, commit, and push a matching tag like `v0.3.0`. The workflow builds the plugin, packs it, and attaches `cyclops.wings-plugin` to a GitHub release.

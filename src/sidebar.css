@@ -1,0 +1,159 @@
+/* What's Cyclops' own. Layout, text, cards and buttons come from wings-plugin-ui and Wings' plugin-ui.css. */
+
+/* A running timer: its task wraps, and its clock is large. */
+.timer .task {
+  overflow-wrap: anywhere;
+}
+.clock {
+  font: 600 24px/1 var(--wings-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+/* The connect card's button to Cyclops Settings. */
+.connect .start {
+  align-self: flex-start;
+}
+
+/* The week's range and arrows, and a button for each day. */
+.range {
+  padding: 0 4px;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.days {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 2px;
+}
+button.day {
+  flex-direction: column;
+  gap: 1px;
+  height: auto;
+  min-width: 0;
+  padding: 6px 0;
+  border-color: transparent;
+  background: transparent;
+  font-weight: 400;
+}
+button.day:hover {
+  background: var(--wings-hover);
+}
+button.day[aria-pressed="true"] {
+  border-color: var(--wings-hairline-strong);
+  background: var(--wings-pressed);
+}
+.day .name {
+  font-size: 11px;
+  color: var(--wings-muted);
+  white-space: nowrap;
+}
+.day[aria-pressed="true"] .name {
+  color: var(--wings-fg);
+}
+.day[aria-current="date"] .name {
+  color: var(--wings-fg);
+  font-weight: 600;
+}
+.day .total {
+  min-height: 17px;
+  font-size: 11px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* A day's entries. */
+.entries {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.entry {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 6px;
+  border-radius: 8px;
+}
+.entry:hover {
+  background: var(--wings-hover);
+}
+.entry .when {
+  text-align: right;
+  font-size: 12px;
+  color: var(--wings-muted);
+  font-variant-numeric: tabular-nums;
+}
+.entry .when strong {
+  display: block;
+  color: var(--wings-fg);
+  font-weight: 500;
+}
+/* The row's buttons take the place of its times while you point at it or tab into it. */
+.entry .actions {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+}
+.entry:hover .actions,
+.entry:focus-within .actions {
+  opacity: 1;
+}
+.entry:hover .when,
+.entry:focus-within .when {
+  opacity: 0;
+}
+
+/* Buttons that show only an icon. */
+button.icon {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  color: var(--wings-muted);
+}
+button.icon:hover,
+button.icon:focus-visible {
+  color: var(--wings-fg);
+}
+button.icon.delete:hover {
+  color: var(--wings-danger);
+}
+button.icon svg {
+  width: 14px;
+  height: 14px;
+}
+/* aria-disabled keeps focus on a button that has nowhere to go; it doesn't light up either. */
+button[data-variant="ghost"][aria-disabled="true"]:hover {
+  background: transparent;
+}
+
+/* Deleting, in place of an entry's buttons, and times as wide as they need. */
+.confirm {
+  flex: 1;
+  min-width: 0;
+}
+input[type="time"] {
+  width: auto;
+}
+
+/* The popover's total for today. */
+.today {
+  white-space: nowrap;
+}
+.today strong {
+  color: var(--wings-fg);
+}
+
+/* A field with suggestions fills the row it's in, beside a button. */
+.combo {
+  flex: 1;
+}

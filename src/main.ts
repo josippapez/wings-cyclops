@@ -2,9 +2,13 @@
 // calls. The sidebar and this script tell each other about changes with wings.broadcast, so a timer started
 // in one shows in the other at once. Changes made on the Cyclops website show on the next 30 s poll.
 
+import { clockTime, today } from "./lib/dates";
+import { state } from "./lib/state";
+import type { Entry, Me, Project } from "./lib/types";
+
 const API = "https://cyclops-api.prototyp.digital/api";
 
-async function api(path, { method = "GET", body } = {}, retried = false) {
+async function api<T = unknown>(path: string, { method = "GET", body }: { method?: string; body?: object } = {}, retried = false): Promise<T> {
   if (!(await wings.secrets.has("token"))) throw new Error("Cyclops isn't connected. Open the Cyclops sidebar in Wings and connect it.");
   const res = await wings.fetch(API + path, {
     method,
@@ -12,7 +16,7 @@ async function api(path, { method = "GET", body } = {}, retried = false) {
     headers: body ? { "Content-Type": "application/json" } : {},
     body: body ? JSON.stringify(body) : undefined,
   });
-  let data = null;
+  let data: { message?: unknown } | null = null;
   try {
     data = res.body ? JSON.parse(res.body) : null;
   } catch {}
@@ -21,14 +25,18 @@ async function api(path, { method = "GET", body } = {}, retried = false) {
   if (res.status === 409 && /try again$/i.test(message) && !retried) return api(path, { method, body }, true);
   if (res.status === 401) throw new Error("Cyclops didn't accept the saved token. Connect again in the Cyclops sidebar.");
   if (res.status >= 400) throw new Error(message || `Cyclops answered ${res.status}`);
-  return data;
+  return data as T;
 }
 
-/** Projects by id, loaded when a timer's project isn't known yet. @type {Map<string, any> | null} */
-let projects = null;
-const today = () => new Intl.DateTimeFormat("en-CA").format(new Date());
-const clockTime = (iso) => new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
-function duration(minutes) {
+/** Projects by id, loaded when a timer's project isn't known yet. */
+let projects: Map<string, Project> | null = null;
+/** Timers' projects the last /projects didn't list, like an archived one, so they aren't asked for every 30 s. */
+let missing = new Set<string>();
+/** Cyclops files entries under days in the profile's timezone, which `today` uses, so load the profile first. */
+async function profile() {
+  state.me ??= await api<Me>("/auth/me");
+}
+function duration(minutes: number) {
   const h = Math.floor(minutes / 60);
   const m = Math.round(minutes % 60);
   return h ? `${h}h ${m}m` : `${m}m`;
@@ -36,15 +44,28 @@ function duration(minutes) {
 
 async function refresh() {
   try {
-    if (!(await wings.secrets.has("token"))) return void (await wings.setSidebarLabel("tracker", null));
-    const timers = await api("/time-entries/timers");
+    if (!(await wings.secrets.has("token"))) {
+      // Signed out: the next sign-in may be another account.
+      state.me = null;
+      projects = null;
+      missing = new Set();
+      return void (await wings.setSidebarLabel("tracker", null));
+    }
+    await profile();
+    const timers = await api<Entry[]>("/time-entries/timers");
     if (timers.length === 0) return void (await wings.setSidebarLabel("tracker", null));
     const [entries] = await Promise.all([
-      api(`/time-entries?from=${today()}&to=${today()}`),
-      projects && timers.every((t) => projects?.has(t.projectId)) ? null : api("/projects").then((list) => (projects = new Map(list.map((p) => [p.id, p])))),
+      api<Entry[]>(`/time-entries?from=${today()}&to=${today()}`),
+      projects && timers.every((t) => projects?.has(t.projectId) || missing.has(t.projectId))
+        ? null
+        : api<Project[]>("/projects").then((list) => {
+            const byId = new Map(list.map((p) => [p.id, p]));
+            projects = byId;
+            missing = new Set(timers.map((t) => t.projectId).filter((id) => !byId.has(id)));
+          }),
     ]);
     const first = timers.reduce((a, b) => (Date.parse(a.startedAt) <= Date.parse(b.startedAt) ? a : b));
-    const since = (t) => (Date.now() - Date.parse(t.startedAt)) / 60_000;
+    const since = (t: Entry) => (Date.now() - Date.parse(t.startedAt)) / 60_000;
     const logged = entries.filter((e) => e.endedAt).reduce((n, e) => n + (e.durationMinutes ?? 0), 0);
     const running = timers.reduce((n, t) => n + since(t), 0);
     const project = projects?.get(first.projectId);
@@ -65,7 +86,7 @@ async function refresh() {
 
 // The sidebar started, stopped or resumed a timer, or connected or signed out.
 wings.onBroadcast((message) => {
-  if (message?.type === "timers-changed") void refresh();
+  if ((message as { type?: unknown } | null)?.type === "timers-changed") void refresh();
 });
 
 void refresh();
@@ -74,10 +95,10 @@ setInterval(refresh, 30_000);
 
 // ---------- tools for Claude ----------
 
-const projectInfo = (p) => ({ id: p.id, name: p.name, client: p.clientName });
+const projectInfo = (p: Project) => ({ id: p.id, name: p.name, client: p.clientName });
 
 async function timers() {
-  const [running, projects] = await Promise.all([api("/time-entries/timers"), api("/projects")]);
+  const [running, projects] = await Promise.all([api<Entry[]>("/time-entries/timers"), api<Project[]>("/projects")]);
   const byId = new Map(projects.map((p) => [p.id, p]));
   return running.map((t) => ({
     id: t.id,
@@ -88,7 +109,7 @@ async function timers() {
   }));
 }
 
-wings.onTool("list_projects", async () => (await api("/projects")).map(projectInfo));
+wings.onTool("list_projects", async () => (await api<Project[]>("/projects")).map(projectInfo));
 
 wings.onTool("running_timers", async () => {
   const running = await timers();
@@ -98,7 +119,7 @@ wings.onTool("running_timers", async () => {
 wings.onTool("start_timer", async ({ projectId, task }) => {
   if (typeof projectId !== "string") throw new Error("projectId is required. Get one from list_projects.");
   const text = typeof task === "string" ? task.trim() : "";
-  const timer = await api("/time-entries/timer", { method: "POST", body: text ? { projectId, task: text } : { projectId } });
+  const timer = await api<Entry | null>("/time-entries/timer", { method: "POST", body: text ? { projectId, task: text } : { projectId } });
   void refresh();
   void wings.broadcast({ type: "timers-changed" });
   return { started: true, timerId: timer?.id ?? null, projectId, task: text || null };
@@ -123,13 +144,12 @@ const DAY = /^\d{4}-\d{2}-\d{2}$/;
 // Cyclops reads a time without an offset in its server's own timezone, so one is required.
 const INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/i;
 
-/** @param {unknown} value @param {string} name @param {string} source */
-function uuid(value, name, source) {
+function uuid(value: unknown, name: string, source: string) {
   if (typeof value !== "string" || !UUID.test(value)) throw new Error(`${name} must be an id from ${source}.`);
   return value;
 }
 
-const entryInfo = (e, byId) => ({
+const entryInfo = (e: Entry, byId: Map<string, Project>) => ({
   id: e.id,
   date: e.entryDate,
   task: e.task || null,
@@ -145,10 +165,12 @@ wings.onTool("list_entries", async ({ from, to }) => {
   for (const [name, value] of Object.entries({ from, to })) {
     if (value !== undefined && (typeof value !== "string" || !DAY.test(value))) throw new Error(`${name} must be a date like 2026-10-08.`);
   }
-  const first = from ?? to ?? today();
-  const last = to ?? (first > today() ? first : today());
+  await profile();
+  // Checked above: each is a YYYY-MM-DD string or left out.
+  const first = (from ?? to ?? today()) as string;
+  const last = (to ?? (first > today() ? first : today())) as string;
   if (first > last) throw new Error("from must be on or before to.");
-  const [entries, list] = await Promise.all([api(`/time-entries?from=${first}&to=${last}`), api("/projects")]);
+  const [entries, list] = await Promise.all([api<Entry[]>(`/time-entries?from=${first}&to=${last}`), api<Project[]>("/projects")]);
   const byId = new Map(list.map((p) => [p.id, p]));
   return entries.length ? entries.map((e) => entryInfo(e, byId)) : `No entries from ${first} to ${last}.`;
 });
@@ -159,7 +181,7 @@ wings.onTool("update_entry", async (input) => {
   const unknown = Object.keys(input).filter((key) => !allowed.includes(key));
   if (unknown.length) throw new Error(`update_entry doesn't take ${unknown.join(", ")}. It takes ${allowed.join(", ")}.`);
   const entryId = uuid(input.entryId, "entryId", "list_entries or running_timers");
-  const body = {};
+  const body: Record<string, string> = {};
   if (input.task !== undefined) {
     if (typeof input.task !== "string") throw new Error("task must be a string.");
     // An empty task clears it.
@@ -175,7 +197,7 @@ wings.onTool("update_entry", async (input) => {
     body[name] = new Date(value).toISOString();
   }
   if (Object.keys(body).length === 0) throw new Error("Pass at least one of task, projectId, startedAt and endedAt.");
-  const [entry, list] = await Promise.all([api(`/time-entries/${entryId}`, { method: "PATCH", body }), api("/projects")]);
+  const [entry, list] = await Promise.all([api<Entry>(`/time-entries/${entryId}`, { method: "PATCH", body }), api<Project[]>("/projects")]);
   void refresh();
   void wings.broadcast({ type: "timers-changed" });
   return { updated: true, entry: entryInfo(entry, new Map(list.map((p) => [p.id, p]))) };
