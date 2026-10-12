@@ -321,3 +321,56 @@ button.ghost[aria-disabled="true"]:hover {
   color: var(--wings-muted);
   cursor: default;
 }
+
+/* The popover under the title bar button: today only, with a timer or a manual entry form. */
+#app[data-view="popover"] {
+  gap: 12px;
+  padding: 12px 14px 14px;
+}
+.head h1 {
+  font-size: 14px;
+  font-weight: 600;
+}
+.head .name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.add {
+  padding: 12px;
+}
+.today {
+  font-size: 12px;
+  white-space: nowrap;
+}
+.today strong {
+  color: var(--wings-fg);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+/* Timer or Manual, like a toggle group. */
+.segmented {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--wings-input);
+}
+.segmented button {
+  height: 24px;
+  padding: 0 10px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--wings-muted);
+}
+.segmented button:hover {
+  background: var(--wings-hover);
+  color: var(--wings-fg);
+}
+.segmented button[aria-pressed="true"] {
+  border-color: var(--wings-hairline-strong);
+  background: var(--wings-pressed);
+  color: var(--wings-fg);
+}

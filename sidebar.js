@@ -3,10 +3,13 @@
 
 // The Cyclops sidebar: connect with a personal API token, start and stop timers, and see the week.
 // Every request goes through wings.fetch, which adds the token in Wings, so this page never holds it.
+// popover.html loads this file too, with `data-view="popover"`: the same timers and today's entries, compact,
+// with a manual entry form and no other days.
 
 const API = "https://cyclops-api.prototyp.digital/api";
 const WEB = "https://cyclops.prototyp.digital";
 const app = /** @type {HTMLElement} */ (document.getElementById("app"));
+const POPOVER = app.dataset.view === "popover";
 
 class SignedOut extends Error {}
 
@@ -15,9 +18,10 @@ class SignedOut extends Error {}
 /**
  * `weeks` holds each week's entries by its Monday, once loaded. `day` is the day being looked at, or null to follow today.
  * `wholeWeek` lists every day of that day's week instead, like the Cyclops web app.
- * @type {{ phase: "loading" | "connect" | "ready", me: any, projects: any[], timers: any[], weeks: Map<string, any[]>, day: string | null, wholeWeek: boolean, weekError: { week: string, message: string } | null, history: Map<string, Suggestion>, error: string | null, busy: Set<string>, task: string, projectId: string, editing: Draft | null, confirming: string | null }}
+ * `adding` is the popover's form: a timer, or a manual entry today from `start` to `end` (HH:MM).
+ * @type {{ phase: "loading" | "connect" | "ready", me: any, projects: any[], timers: any[], weeks: Map<string, any[]>, day: string | null, wholeWeek: boolean, weekError: { week: string, message: string } | null, history: Map<string, Suggestion>, error: string | null, busy: Set<string>, task: string, projectId: string, editing: Draft | null, confirming: string | null, adding: { mode: "timer" | "manual", start: string, end: string } }}
  */
-const state = { phase: "loading", me: null, projects: [], timers: [], weeks: new Map(), day: null, wholeWeek: false, weekError: null, history: new Map(), error: null, busy: new Set(), task: "", projectId: "", editing: null, confirming: null };
+const state = { phase: "loading", me: null, projects: [], timers: [], weeks: new Map(), day: null, wholeWeek: false, weekError: null, history: new Map(), error: null, busy: new Set(), task: "", projectId: "", editing: null, confirming: null, adding: { mode: "timer", start: "", end: "" } };
 
 // ---------- API ----------
 
@@ -368,7 +372,7 @@ function closeEdit(id) {
   set({ editing: null, error: null });
 }
 
-/** The draft's start and end. An end at or before the start is on the next day, as in the Cyclops web app. @param {Draft} draft */
+/** The draft's start and end. An end at or before the start is on the next day, as in the Cyclops web app. @param {{ day: string, start: string, end: string }} draft */
 function range(draft) {
   const start = draft.start ? atTime(draft.day, draft.start) : null;
   const end = draft.start && draft.end ? atTime(draft.end <= draft.start ? addDays(draft.day, 1) : draft.day, draft.end) : null;
@@ -679,6 +683,20 @@ const projectBox = (id, value, onChange) =>
     empty: () => "No matching projects.",
   });
 
+/** The start form's project and task, as Cyclops takes them. It refuses empty fields, so a blank task is left out rather than sent as "". */
+function newEntry() {
+  const task = state.task.trim();
+  return task ? { projectId: state.projectId, task } : { projectId: state.projectId };
+}
+
+function startTimer() {
+  const body = newEntry();
+  void act("start", async () => {
+    await api("/time-entries/timer", { method: "POST", body });
+    state.task = "";
+  });
+}
+
 function renderStart() {
   const busy = state.busy.has("start");
   return h(
@@ -689,12 +707,7 @@ function renderStart() {
       onsubmit: (/** @type {SubmitEvent} */ e) => {
         e.preventDefault();
         if (!state.projectId) return;
-        const task = state.task.trim();
-        // Cyclops refuses empty fields, so a blank description is left out rather than sent as "".
-        void act("start", async () => {
-          await api("/time-entries/timer", { method: "POST", body: task ? { projectId: state.projectId, task } : { projectId: state.projectId } });
-          state.task = "";
-        });
+        startTimer();
       },
     },
     taskBox({
@@ -784,10 +797,12 @@ function weekDays(week) {
 }
 
 /** A day's heading and total over its entries. @param {any[]} week @param {string} day @param {any[]} done */
-function daySection(week, day, done) {
+const daySection = (week, day, done) => [h("h3", { class: "section-title" }, h("span", {}, dayName(day)), h("span", {}, duration(minutesOn(week, day)))), dayEntries(day, done)];
+
+/** A day's finished entries, each with resume, edit and delete. @param {string} day @param {any[]} done */
+function dayEntries(day, done) {
   const listed = done.filter((e) => e.entryDate === day);
-  return [
-    h("h3", { class: "section-title" }, h("span", {}, dayName(day)), h("span", {}, duration(minutesOn(week, day)))),
+  return (
     listed.length === 0
       ? h("p", { class: "muted" }, day === today() ? "Nothing logged today yet." : `Nothing logged on ${dayName(day)}.`)
       : h(
@@ -818,8 +833,8 @@ function daySection(week, day, done) {
               ),
             );
           }),
-        ),
-  ];
+        )
+  );
 }
 
 function renderEntries() {
@@ -843,12 +858,121 @@ function renderEntries() {
   );
 }
 
+// ---------- the popover ----------
+
+/** The popover's title, with a way to the sidebar for everything else. */
+function renderHead() {
+  return h(
+    "header",
+    { class: "row head" },
+    h("h1", { class: "grow" }, "Cyclops"),
+    h("span", { class: "muted name" }, state.me?.name ?? ""),
+    h("button", { class: "ghost", type: "button", id: "open-sidebar", onclick: () => void wings.openView("tracker") }, "Open Cyclops"),
+  );
+}
+
+/** Starts a timer, or adds an entry for today with a start and an end, and shows today's total. */
+function renderAdd() {
+  const adding = state.adding;
+  const manual = adding.mode === "manual";
+  const busy = state.busy.has(manual ? "add" : "start");
+  const week = state.weeks.get(weekStart());
+  const hint = h("span", { class: "grow muted" });
+  const showDuration = () => {
+    const { start, end } = range({ day: today(), start: adding.start, end: adding.end });
+    hint.textContent = start && end && adding.end > adding.start ? duration((end.getTime() - start.getTime()) / 60_000) : "";
+  };
+  const time = (/** @type {"start" | "end"} */ field, /** @type {string} */ label) =>
+    h(
+      "label",
+      { class: "time" },
+      label,
+      h("input", {
+        type: "time",
+        id: `add-${field}`,
+        value: adding[field],
+        oninput: (/** @type {Event} */ e) => {
+          adding[field] = /** @type {HTMLInputElement} */ (e.target).value;
+          showDuration();
+        },
+      }),
+    );
+  const mode = (/** @type {"timer" | "manual"} */ value, /** @type {string} */ label) =>
+    h("button", { type: "button", id: `mode-${value}`, "aria-pressed": String(adding.mode === value), onclick: () => adding.mode === value || ((adding.mode = value), set({ error: null })) }, label);
+  showDuration();
+  return h(
+    "form",
+    {
+      class: "card stack add",
+      onsubmit: (/** @type {SubmitEvent} */ e) => {
+        e.preventDefault();
+        if (busy || !state.projectId) return;
+        if (!manual) return startTimer();
+        if (!adding.start || !adding.end) return set({ error: "Enter a start and an end time." });
+        if (adding.end <= adding.start) return set({ error: "The end time must be after the start." });
+        const { start, end } = range({ day: today(), start: adding.start, end: adding.end });
+        const body = { ...newEntry(), startedAt: start?.toISOString(), endedAt: end?.toISOString() };
+        void act("add", async () => {
+          await api("/time-entries", { method: "POST", body });
+          state.task = "";
+          adding.start = adding.end = "";
+        });
+      },
+    },
+    h(
+      "div",
+      { class: "row" },
+      h("div", { class: "segmented", role: "group", "aria-label": "Add" }, mode("timer", "Timer"), mode("manual", "Manual")),
+      h("span", { class: "grow" }),
+      h("span", { class: "muted today" }, "Today · ", h("strong", { id: "today-total" }, week ? duration(minutesOn(week, today())) : "–")),
+    ),
+    taskBox({ id: "task", label: "What are you working on?", placeholder: manual ? "What did you work on?" : "What are you working on?", text: () => state.task, onChange: (task) => (state.task = task), projectId: () => state.projectId }),
+    projectBox("project", () => state.projectId, (id) => (state.projectId = id)),
+    manual ? h("div", { class: "row" }, time("start", "Start"), time("end", "End")) : null,
+    h(
+      "div",
+      { class: "row" },
+      manual ? hint : h("span", { class: "grow" }),
+      h("button", { class: "primary", type: "submit", disabled: busy || !state.projectId }, manual ? (busy ? "Adding…" : "Add") : busy ? "Starting…" : "Start"),
+    ),
+  );
+}
+
+/** Today's finished entries; other days are in the sidebar. */
+function renderToday() {
+  const week = state.weeks.get(weekStart());
+  if (!week) return h("div", { class: "row muted" }, h("span", { class: "spinner", "aria-hidden": true }), "Loading today…");
+  return h("section", { class: "stack", "aria-label": "Today's entries" }, dayEntries(today(), week.filter((e) => e.endedAt)));
+}
+
+function renderPopover() {
+  const parts = [renderHead()];
+  if (state.phase === "loading") parts.push(h("div", { class: "row muted" }, h("span", { class: "spinner", "aria-hidden": true }), "Loading Cyclops…"));
+  if (state.phase === "connect") parts.push(h("p", { class: "muted" }, "Connect Cyclops in the sidebar to track time from here."));
+  if (state.phase === "ready") parts.push(...state.timers.map(renderTimer), renderAdd());
+  // Under the form rather than at the end, which a long day pushes out of the popover.
+  if (state.error) parts.push(h("p", { class: "error", role: "alert" }, state.error));
+  if (state.phase === "ready") parts.push(renderToday());
+  return parts;
+}
+
 function render() {
   // Rendering replaces the page, so keep the caret in the field you're typing in.
   const focused = focusNext ?? document.activeElement?.id;
   const caret = !focusNext && document.activeElement instanceof HTMLInputElement ? document.activeElement.selectionStart : null;
   focusNext = null;
   liveBoxes.clear();
+  app.replaceChildren(...(POPOVER ? renderPopover() : renderSidebar()));
+  if (focused) {
+    const el = document.getElementById(focused);
+    restoringFocus = true;
+    el?.focus();
+    restoringFocus = false;
+    if (el instanceof HTMLInputElement && caret != null) el.setSelectionRange(caret, caret);
+  }
+}
+
+function renderSidebar() {
   const parts = [];
   if (state.phase === "loading") parts.push(h("div", { class: "row muted" }, h("span", { class: "spinner", "aria-hidden": true }), "Loading Cyclops…"));
   if (state.phase === "connect") parts.push(renderConnect());
@@ -880,14 +1004,7 @@ function render() {
     );
   }
   if (state.error) parts.push(h("p", { class: "error", role: "alert" }, state.error));
-  app.replaceChildren(...parts);
-  if (focused) {
-    const el = document.getElementById(focused);
-    restoringFocus = true;
-    el?.focus();
-    restoringFocus = false;
-    if (el instanceof HTMLInputElement && caret != null) el.setSelectionRange(caret, caret);
-  }
+  return parts;
 }
 
 // Running clocks tick every second without a reload; the data refreshes every minute.
