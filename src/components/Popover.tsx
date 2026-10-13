@@ -4,7 +4,7 @@ import { useReducer } from "react";
 import { Button, Card, Chips, Field, Row, Spinner, Stack, Text, TextInput, Title } from "wings-plugin-ui";
 
 import { api } from "../lib/api";
-import { act, newEntry, startTimer } from "../lib/data";
+import { act, newEntry, reload, startTimer } from "../lib/data";
 import { duration, minutesOn, today, weekStart } from "../lib/dates";
 import { range } from "../lib/edit";
 import { set, state } from "../lib/state";
@@ -21,6 +21,9 @@ function Head() {
       <Text tone="muted" size="small" truncate>
         {state.me?.name ?? ""}
       </Text>
+      <Button variant="ghost" id="refresh" busy={state.busy.has("refresh")} title="Reload from Cyclops, after a change made elsewhere" onClick={reload}>
+        Refresh
+      </Button>
       <Button variant="ghost" id="open-sidebar" onClick={() => void wings.openView("tracker")}>
         Open Cyclops
       </Button>

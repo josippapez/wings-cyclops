@@ -1,6 +1,7 @@
 import { Button, Row, Spinner, Text } from "wings-plugin-ui";
 
 import { WEB } from "../lib/api";
+import { reload } from "../lib/data";
 import { set, state } from "../lib/state";
 import { Connect } from "./Connect";
 import { Entries, Week } from "./Days";
@@ -23,6 +24,9 @@ export function Sidebar() {
             <Text tone="muted" size="small" grow>
               {state.me?.name ?? ""}
             </Text>
+            <Button variant="ghost" size="sm" busy={state.busy.has("refresh")} title="Reload from Cyclops, after a change made elsewhere" onClick={reload}>
+              Refresh
+            </Button>
             <Button variant="ghost" size="sm" onClick={() => void wings.openUrl(WEB)}>
               Open Cyclops
             </Button>

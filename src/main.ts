@@ -1,6 +1,8 @@
 // Keeps the running timer on the clock button, with details when you point at it, and runs the tools Claude
 // calls. The sidebar and this script tell each other about changes with wings.broadcast, so a timer started
-// in one shows in the other at once. Changes made on the Cyclops website show on the next 30 s poll.
+// in one shows in the other at once. Changes made elsewhere show on the next 30 s poll while Wings is in front, at once when it comes back, or on Refresh.
+
+import { pollWhileFocused } from "wings-plugin-sdk/poll";
 
 import { clockTime, today } from "./lib/dates";
 import { state } from "./lib/state";
@@ -90,8 +92,9 @@ wings.onBroadcast((message) => {
 });
 
 void refresh();
-// Two requests a minute stay far below Cyclops's limit of 100 per token.
-setInterval(refresh, 30_000);
+// Two requests a minute stay far below Cyclops's limit of 100 per token, and none go out while Wings is in the
+// background: the label is checked again the moment you come back.
+pollWhileFocused(() => void refresh(), 30_000);
 
 // ---------- tools for Claude ----------
 

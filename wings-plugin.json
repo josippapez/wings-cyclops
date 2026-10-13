@@ -1,8 +1,8 @@
 {
   "id": "cyclops",
   "name": "Cyclops",
-  "version": "0.6.0",
-  "minWingsVersion": "0.1.15",
+  "version": "0.7.0",
+  "minWingsVersion": "0.1.17",
   "description": "Track, edit and delete time in Cyclops from a sidebar or a quick popover, and let Claude do the same.",
   "api": 1,
   "main": "main.js",

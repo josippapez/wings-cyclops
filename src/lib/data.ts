@@ -131,3 +131,6 @@ export function startTimer() {
     state.task = "";
   });
 }
+
+/** The Refresh button: reloads timers and entries, and has the main script reload the title bar button's label. */
+export const reload = () => void act("refresh", async () => {});

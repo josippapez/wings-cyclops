@@ -4,7 +4,7 @@ Adds a clock button to the Wings title bar that opens Cyclops in the right sideb
 
 Point at the clock button, or tab to it, and a popover shows today: running timers with Stop, a form that starts a timer or, under Manual, adds an entry for today from a start and an end time, today's total, and today's entries to resume, edit or delete. Open Cyclops in the popover, or a click on the button, opens the sidebar for other days and weeks. The popover needs a Wings version with plugin popovers; older ones show only the sidebar.
 
-The arrows above the entries move a week back or forward, and each day's button shows that day's entries and total. Today brings you back. Week lists every day of the week with its entries and total, like the Cyclops web app. This week reloads every minute, and an earlier week loads once, when you first go to it.
+The arrows above the entries move a week back or forward, and each day's button shows that day's entries and total. Today brings you back. Week lists every day of the week with its entries and total, like the Cyclops web app. This week reloads every minute while Wings is in front, when you come back to Wings, and when the sidebar or popover is shown again. Refresh, in both, reloads at once, for a timer or entry changed in the Cyclops web app or another app. An earlier week loads once, when you first go to it.
 
 ## Connect
 

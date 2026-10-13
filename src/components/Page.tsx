@@ -1,5 +1,7 @@
 import { useLayoutEffect, useSyncExternalStore, type ComponentType } from "react";
 
+import { pollWhileFocused } from "wings-plugin-sdk/poll";
+
 import { load, refresh, shownWeek } from "../lib/data";
 import { elapsed, weekStart } from "../lib/dates";
 import { focus, getVersion, render, state, subscribe } from "../lib/state";
@@ -23,10 +25,14 @@ export function startPage() {
   setInterval(() => {
     for (const el of document.querySelectorAll<HTMLElement>("[data-started]")) el.textContent = elapsed(el.dataset.started ?? "");
   }, 1000);
+  // Changes made in the Cyclops web app or on a phone only show when asked for, so this asks: every minute while Wings
+  // is in front, once when you come back to it, and when the sidebar or popover is shown again.
   // Not while an entry is being edited: a render moves the caret of a time field back to its hours.
-  setInterval(() => {
-    if (state.phase === "ready" && state.busy.size === 0 && !state.editing) void refresh().then(render, () => {});
-  }, 60_000);
+  const quiet = () => {
+    if (state.phase === "ready" && state.busy.size === 0 && !state.editing) void refresh(true).then(render, () => {});
+  };
+  pollWhileFocused(quiet, 60_000);
+  document.addEventListener("visibilitychange", () => document.visibilityState === "visible" && quiet());
 
   // Claude started or stopped a timer, or changed or deleted an entry, through the plugin's tools. The entry may be
   // in any week, so earlier weeks load again when you next go to them.
