@@ -1,7 +1,7 @@
 {
   "id": "cyclops",
   "name": "Cyclops",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "minWingsVersion": "0.1.50",
   "description": "Track, edit and delete time in Cyclops from a sidebar or a quick popover, and let Claude do the same.",
   "api": 1,
@@ -55,6 +55,7 @@
           "properties": {
             "projectId": {
               "type": "string",
+              "format": "uuid",
               "description": "The project to track time on"
             },
             "task": {
@@ -91,10 +92,12 @@
           "properties": {
             "from": {
               "type": "string",
+              "format": "date",
               "description": "First day, YYYY-MM-DD. Defaults to today, or to `to` when only that is given"
             },
             "to": {
               "type": "string",
+              "format": "date",
               "description": "Last day, YYYY-MM-DD, included. Defaults to today, or to `from` when that is later"
             }
           },
@@ -109,6 +112,7 @@
           "properties": {
             "entryId": {
               "type": "string",
+              "format": "uuid",
               "description": "The entry to change"
             },
             "task": {
@@ -118,14 +122,17 @@
             },
             "projectId": {
               "type": "string",
+              "format": "uuid",
               "description": "Move the entry to this project, from list_projects"
             },
             "startedAt": {
               "type": "string",
+              "format": "date-time",
               "description": "New start, ISO 8601 with a timezone offset, like 2026-10-08T09:00:00+02:00. A running timer can't start in the future"
             },
             "endedAt": {
               "type": "string",
+              "format": "date-time",
               "description": "New end, ISO 8601 with a timezone offset, after the start. Setting it on a running timer stops the timer"
             }
           },
@@ -143,6 +150,7 @@
           "properties": {
             "entryId": {
               "type": "string",
+              "format": "uuid",
               "description": "The entry to delete"
             }
           },

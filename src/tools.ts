@@ -61,7 +61,7 @@ export const tools = {
   start_timer: tool({
     description: "Starts a Cyclops timer. Get the projectId from list_projects.",
     input: s.object({
-      projectId: s.string().describe("The project to track time on"),
+      projectId: s.string({ format: "uuid" }).describe("The project to track time on"),
       task: s.string({ maxLength: 2000 }).describe("What you're working on").optional(),
     }),
     run: async ({ projectId, task }) => {
@@ -93,8 +93,8 @@ export const tools = {
     description:
       "Lists your Cyclops time entries between two days, with each entry's id, task, project, client, start, end and minutes. A running timer has no end. Use it to find the entryId for update_entry and delete_entry.",
     input: s.object({
-      from: s.string().describe("First day, YYYY-MM-DD. Defaults to today, or to `to` when only that is given").optional(),
-      to: s.string().describe("Last day, YYYY-MM-DD, included. Defaults to today, or to `from` when that is later").optional(),
+      from: s.string({ format: "date" }).describe("First day, YYYY-MM-DD. Defaults to today, or to `to` when only that is given").optional(),
+      to: s.string({ format: "date" }).describe("Last day, YYYY-MM-DD, included. Defaults to today, or to `from` when that is later").optional(),
     }),
     run: async ({ from, to }) => {
       for (const [name, value] of Object.entries({ from, to })) {
@@ -113,11 +113,11 @@ export const tools = {
   update_entry: tool({
     description: "Changes a Cyclops time entry or running timer. Pass only the fields to change. Get the entryId from list_entries or running_timers.",
     input: s.object({
-      entryId: s.string().describe("The entry to change"),
+      entryId: s.string({ format: "uuid" }).describe("The entry to change"),
       task: s.string({ maxLength: 2000 }).describe("What was worked on. An empty string clears it").optional(),
-      projectId: s.string().describe("Move the entry to this project, from list_projects").optional(),
-      startedAt: s.string().describe("New start, ISO 8601 with a timezone offset, like 2026-10-08T09:00:00+02:00. A running timer can't start in the future").optional(),
-      endedAt: s.string().describe("New end, ISO 8601 with a timezone offset, after the start. Setting it on a running timer stops the timer").optional(),
+      projectId: s.string({ format: "uuid" }).describe("Move the entry to this project, from list_projects").optional(),
+      startedAt: s.string({ format: "date-time" }).describe("New start, ISO 8601 with a timezone offset, like 2026-10-08T09:00:00+02:00. A running timer can't start in the future").optional(),
+      endedAt: s.string({ format: "date-time" }).describe("New end, ISO 8601 with a timezone offset, after the start. Setting it on a running timer stops the timer").optional(),
     }),
     run: async (input) => {
       const entryId = uuid(input.entryId, "entryId", "list_entries or running_timers");
@@ -142,7 +142,7 @@ export const tools = {
 
   delete_entry: tool({
     description: "Permanently deletes a Cyclops time entry, or a running timer without saving its time. This can't be undone. Get the entryId from list_entries or running_timers.",
-    input: s.object({ entryId: s.string().describe("The entry to delete") }),
+    input: s.object({ entryId: s.string({ format: "uuid" }).describe("The entry to delete") }),
     run: async ({ entryId }) => {
       const id = uuid(entryId, "entryId", "list_entries or running_timers");
       await api(`/time-entries/${id}`, { method: "DELETE" });
