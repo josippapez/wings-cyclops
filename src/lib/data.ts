@@ -1,7 +1,10 @@
 // ---------- loading ----------
 
+import { errorMessage } from "wings-plugin-sdk/async";
+
 import { api, SignedOut } from "./api";
 import { addDays, mondayOf, today, weekStart } from "./dates";
+import { ch } from "./messages";
 import { render, set, state, type Suggestion } from "./state";
 import type { Entry, Me, Project } from "./types";
 
@@ -15,7 +18,7 @@ export async function load() {
     set({ phase: "ready" });
   } catch (error) {
     if (error instanceof SignedOut) return set({ phase: "connect", error: "Cyclops didn't accept the saved token. Connect again." });
-    set({ phase: state.phase === "loading" ? "connect" : state.phase, error: String((error as Error).message ?? error) });
+    set({ phase: state.phase === "loading" ? "connect" : state.phase, error: errorMessage(error) });
   }
 }
 
@@ -80,7 +83,7 @@ async function loadWeek() {
     remember(entries);
   } catch (error) {
     if (error instanceof SignedOut) return set({ phase: "connect", error: "Cyclops didn't accept the saved token. Connect again." });
-    state.weekError = { week: monday, message: String((error as Error).message ?? error) };
+    state.weekError = { week: monday, message: errorMessage(error) };
   } finally {
     loadingWeek = null;
   }
@@ -107,11 +110,11 @@ export async function act(key: string, task: () => Promise<unknown>) {
   try {
     await task();
     // The main script keeps the title bar button current.
-    void wings.broadcast({ type: "timers-changed" });
+    void ch.tell("timers-changed");
     await refresh(true);
   } catch (error) {
     if (error instanceof SignedOut) return set({ phase: "connect", error: "Cyclops didn't accept the saved token. Connect again." });
-    state.error = String((error as Error).message ?? error);
+    state.error = errorMessage(error);
   } finally {
     state.busy.delete(key);
     render();

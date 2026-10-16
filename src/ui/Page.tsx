@@ -1,14 +1,16 @@
-import { useLayoutEffect, useSyncExternalStore, type ComponentType } from "react";
+import { useEffect, useLayoutEffect, useSyncExternalStore, type ComponentType } from "react";
 
 import { pollWhileFocused } from "wings-plugin-sdk/poll";
 
 import { load, refresh, shownWeek } from "../lib/data";
 import { elapsed, weekStart } from "../lib/dates";
+import { ch } from "../lib/messages";
 import { focus, getVersion, render, state, subscribe } from "../lib/state";
 
 /** Draws `view` again on each render(). */
 export function Page({ view: View }: { view: ComponentType }) {
   useSyncExternalStore(subscribe, getVersion);
+  useEffect(startPage, []);
   // After each render, focus moves where an action asked it to, as its element went away.
   useLayoutEffect(() => {
     const focused = focus.next;
@@ -19,10 +21,10 @@ export function Page({ view: View }: { view: ComponentType }) {
   return <View />;
 }
 
-/** Loads Cyclops, keeps the clocks ticking and the data fresh, and follows the main script's broadcasts. */
-export function startPage() {
+/** Loads Cyclops, keeps the clocks ticking and the data fresh, and follows the main script's messages. Returns what stops them. */
+function startPage() {
   // Running clocks tick every second without a reload; the data refreshes every minute.
-  setInterval(() => {
+  const ticking = setInterval(() => {
     for (const el of document.querySelectorAll<HTMLElement>("[data-started]")) el.textContent = elapsed(el.dataset.started ?? "");
   }, 1000);
   // Changes made in the Cyclops web app or on a phone only show when asked for, so this asks: every minute while Wings
@@ -31,16 +33,23 @@ export function startPage() {
   const quiet = () => {
     if (state.phase === "ready" && state.busy.size === 0 && !state.editing) void refresh(true).then(render, () => {});
   };
-  pollWhileFocused(quiet, 60_000);
-  document.addEventListener("visibilitychange", () => document.visibilityState === "visible" && quiet());
+  const stopPolling = pollWhileFocused(quiet, 60_000);
+  const onVisible = () => document.visibilityState === "visible" && quiet();
+  document.addEventListener("visibilitychange", onVisible);
 
   // Claude started or stopped a timer, or changed or deleted an entry, through the plugin's tools. The entry may be
   // in any week, so earlier weeks load again when you next go to them.
-  wings.onBroadcast((message) => {
-    if ((message as { type?: unknown } | null)?.type !== "timers-changed" || state.phase !== "ready") return;
+  const stopListening = ch.on("timers-changed", () => {
+    if (state.phase !== "ready") return;
     for (const monday of state.weeks.keys()) if (monday !== weekStart() && monday !== shownWeek()) state.weeks.delete(monday);
     void refresh(true).then(render, () => {});
   });
 
   void load();
+  return () => {
+    clearInterval(ticking);
+    stopPolling();
+    document.removeEventListener("visibilitychange", onVisible);
+    stopListening();
+  };
 }

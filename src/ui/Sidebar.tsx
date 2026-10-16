@@ -2,6 +2,7 @@ import { Button, Row, Spinner, Text } from "wings-plugin-ui";
 
 import { WEB } from "../lib/api";
 import { reload } from "../lib/data";
+import { ch } from "../lib/messages";
 import { set, state } from "../lib/state";
 import { Connect } from "./Connect";
 import { Entries, Week } from "./Days";
@@ -36,7 +37,7 @@ export function Sidebar() {
               title="Removes the token from this Mac. It stays valid until you revoke it in Cyclops Settings."
               onClick={async () => {
                 await wings.secrets.delete("token");
-                void wings.broadcast({ type: "timers-changed" });
+                void ch.tell("timers-changed");
                 set({ phase: "connect", me: null, timers: [], weeks: new Map(), day: null, weekError: null });
               }}
             >
