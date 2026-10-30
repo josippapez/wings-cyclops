@@ -1,7 +1,7 @@
 {
   "id": "cyclops",
   "name": "Cyclops",
-  "version": "0.8.1",
+  "version": "0.8.2",
   "minWingsVersion": "0.1.50",
   "description": "Track, edit and delete time in Cyclops from a sidebar or a quick popover, and let Claude do the same.",
   "api": 1,
@@ -10,6 +10,9 @@
     "fetch": [
       "https://cyclops-api.prototyp.digital/api/"
     ],
+    "secrets": {
+      "token": "https://cyclops-api.prototyp.digital/api/"
+    },
     "openUrl": [
       "https://cyclops.prototyp.digital/"
     ]
