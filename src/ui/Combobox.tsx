@@ -38,9 +38,7 @@ export function TaskBox(o: { id: string; label: string; placeholder: string; tex
       autoFocus={o.autoFocus}
       value={text}
       onInput={change}
-      // The native app has no list that opens on focus: it shows the suggestions under the field all the time, where
-      // eight recent tasks pushed the popover's Start button out of sight. There they wait for something typed.
-      options={WINGS_NATIVE && !text.trim() ? [] : suggest(text, o.projectId()).map((s) => ({ value: s.task, label: s.task }))}
+      options={suggest(text, o.projectId()).map((s) => ({ value: s.task, label: s.task }))}
       onPick={(option) => change(option.value)}
       empty={text.trim() ? "No matching tasks." : "No recent tasks yet."}
     />
