@@ -63,7 +63,8 @@ export function Edit({ entry }: { entry: Entry }) {
         submit();
       }}
     >
-      <TaskBox id="edit-task" label="Task" placeholder="What have you worked on?" text={() => draft.task} onChange={(task) => (draft.task = task)} projectId={() => draft.projectId} />
+      {/* The browser page focuses it by id after it renders (lib/edit.ts), which scrolls it into view; the native app takes autoFocus. */}
+      <TaskBox id="edit-task" label="Task" placeholder="What have you worked on?" text={() => draft.task} onChange={(task) => (draft.task = task)} projectId={() => draft.projectId} autoFocus={WINGS_NATIVE} />
       <ProjectBox id="edit-project" value={() => draft.projectId} onChange={(id) => (draft.projectId = id)} />
       <Row>
         {time("start", draft.running ? "Started" : "Start")}

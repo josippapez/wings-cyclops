@@ -53,7 +53,8 @@ export function DayButton({ onClick, disabled, children, ...props }: DayButtonPr
   const pressed = props["aria-pressed"] === true || props["aria-pressed"] === "true";
   return (
     <Chip pressed={pressed} disabled={disabled} aria-label={props["aria-label"]} onClick={onClick}>
-      {children}
+      {/* The day over its hours, as the browser's .day stacks them. */}
+      <Stack gap="none">{children}</Stack>
     </Chip>
   );
 }

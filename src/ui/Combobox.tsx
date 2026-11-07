@@ -19,7 +19,7 @@ function useField(id: string) {
 const projectLabel = (p: Project) => `${p.name} · ${p.clientName}`;
 
 /** A task field suggesting recent tasks, the project's own first. */
-export function TaskBox(o: { id: string; label: string; placeholder: string; text: () => string; onChange: (task: string) => void; projectId: () => string }) {
+export function TaskBox(o: { id: string; label: string; placeholder: string; text: () => string; onChange: (task: string) => void; projectId: () => string; autoFocus?: boolean }) {
   const { redraw, openOnFocus } = useField(o.id);
   const text = o.text();
   const change = (task: string) => {
@@ -35,6 +35,7 @@ export function TaskBox(o: { id: string; label: string; placeholder: string; tex
       maxLength={2000}
       freeText
       openOnFocus={openOnFocus}
+      autoFocus={o.autoFocus}
       value={text}
       onInput={change}
       options={suggest(text, o.projectId()).map((s) => ({ value: s.task, label: s.task }))}
