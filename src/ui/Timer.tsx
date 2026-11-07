@@ -43,15 +43,18 @@ export function Timer({ timer }: { timer: Entry }) {
       {state.confirming === timer.id ? (
         <Confirm entry={timer} question="Delete this timer? Its time won't be saved." keep="Keep running" after="task" />
       ) : (
-        <Row>
-          <Row grow>
+        // The buttons go under the project when the card is too narrow for both.
+        <Row justify="between" wrap>
+          <Row>
             <ProjectLine id={timer.projectId} />
           </Row>
-          <IconButton name="edit" label={`Edit ${name}`} id={`edit-${timer.id}`} onClick={() => openEdit(timer)} />
-          <IconButton name="delete" label={`Delete ${name}`} id={`delete-${timer.id}`} onClick={() => openConfirm(timer.id)} />
-          <Button variant="destructive" disabled={state.busy.has(key)} onClick={() => void act(key, () => api(`/time-entries/${timer.id}/stop`, { method: "POST" }))}>
-            {state.busy.has(key) ? "Stopping…" : "Stop"}
-          </Button>
+          <Row>
+            <IconButton name="edit" label={`Edit ${name}`} id={`edit-${timer.id}`} onClick={() => openEdit(timer)} />
+            <IconButton name="delete" label={`Delete ${name}`} id={`delete-${timer.id}`} onClick={() => openConfirm(timer.id)} />
+            <Button variant="destructive" disabled={state.busy.has(key)} onClick={() => void act(key, () => api(`/time-entries/${timer.id}/stop`, { method: "POST" }))}>
+              {state.busy.has(key) ? "Stopping…" : "Stop"}
+            </Button>
+          </Row>
         </Row>
       )}
     </Card>

@@ -22,23 +22,25 @@ export function Week() {
   const entries = state.weeks.get(monday);
   return (
     <Stack as="section" aria-label="Week">
-      <Row gap="xs">
+      <Row gap="xs" wrap>
         <IconButton name="previous" label="Previous week" id="week-previous" onClick={() => show(addDays(selected, -7))} />
         <H2 className="range">{weekRange(monday)}</H2>
         {/* aria-disabled rather than disabled, as in the Cyclops web app, so focus stays on the button that got you here. */}
         <IconButton name="next" label="Next week" id="week-next" aria-disabled={current ? "true" : undefined} onClick={() => current || show(addDays(selected, 7))} />
         <Text grow />
-        <Button variant="ghost" id="week-all" aria-pressed={state.wholeWeek} onClick={() => ((state.wholeWeek = !state.wholeWeek), show(state.day))}>
-          Week
-        </Button>
-        <Button
-          variant="ghost"
-          id="week-today"
-          aria-disabled={selected === now && !state.wholeWeek ? "true" : undefined}
-          onClick={() => (selected === now && !state.wholeWeek) || ((state.wholeWeek = false), show(null))}
-        >
-          Today
-        </Button>
+        <Row gap="xs">
+          <Button variant="ghost" id="week-all" aria-pressed={state.wholeWeek} onClick={() => ((state.wholeWeek = !state.wholeWeek), show(state.day))}>
+            Week
+          </Button>
+          <Button
+            variant="ghost"
+            id="week-today"
+            aria-disabled={selected === now && !state.wholeWeek ? "true" : undefined}
+            onClick={() => (selected === now && !state.wholeWeek) || ((state.wholeWeek = false), show(null))}
+          >
+            Today
+          </Button>
+        </Row>
       </Row>
       <Box className="days">
         {Array.from({ length: 7 }, (_, i) => {

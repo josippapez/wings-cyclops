@@ -8,8 +8,9 @@ export function Layout({ tag, className = "", children, ...props }: HTMLAttribut
   const classes = className.split(" ");
   if (classes.includes("clock")) return <Clock started={props["data-started"] ?? ""} />;
   if (tag === "ul") return <List>{children}</List>;
-  // An entry's task, times and buttons side by side. In the browser the buttons show in place of the times on hover.
-  if (tag === "li") return <ListItem>{classes.includes("entry") ? <Row gap="s">{children}</Row> : children}</ListItem>;
+  // An entry's task, times and buttons side by side, the buttons under them when the row is too narrow for all three.
+  // In the browser the buttons show in place of the times on hover.
+  if (tag === "li") return <ListItem>{classes.includes("entry") ? <Row gap="s" wrap>{children}</Row> : children}</ListItem>;
   if (classes.includes("days"))
     return (
       <Row gap="xs" wrap>
