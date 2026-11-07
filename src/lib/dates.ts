@@ -4,8 +4,10 @@ import { state } from "./state";
 import type { Entry } from "./types";
 
 const tz = () => state.me?.timezone || "Europe/Zagreb";
+// The native app's JS engine has no Intl, so there days and times are in the Mac's own timezone, not the Cyclops profile's.
+const pad = (n: number) => String(n).padStart(2, "0");
 /** YYYY-MM-DD in the user's timezone. */
-export const dayOf = (date: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: tz() }).format(date);
+export const dayOf = (date: Date) => (WINGS_NATIVE ? `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` : new Intl.DateTimeFormat("en-CA", { timeZone: tz() }).format(date));
 export const today = () => dayOf(new Date());
 /** @param day YYYY-MM-DD */
 export function addDays(day: string, n: number) {
@@ -17,7 +19,17 @@ export const mondayOf = (day: string) => addDays(day, -((new Date(`${day}T00:00:
 /** Monday of this week, or of a week before it. */
 export const weekStart = (weeksBack = 0) => addDays(mondayOf(today()), -7 * weeksBack);
 /** A YYYY-MM-DD day in words. It's a day in the user's timezone already, so it's formatted as UTC. */
-export const dayLabel = (day: string, options: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", ...options }).format(new Date(`${day}T00:00:00Z`));
+export const dayLabel = (day: string, options: Intl.DateTimeFormatOptions) =>
+  WINGS_NATIVE ? nativeDayLabel(day, options) : new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", ...options }).format(new Date(`${day}T00:00:00Z`));
+const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+/** `dayLabel` as en-GB writes it, for the options this file uses, like "Wed 7 Oct", "Wed, 7 Oct 2025" or "Monday 5 October". */
+function nativeDayLabel(day: string, { weekday, month, year }: Intl.DateTimeFormatOptions) {
+  const [y, m, d] = day.split("-").map(Number);
+  const name = (list: string[], i: number, style: unknown) => (style === "long" ? list[i] : list[i].slice(0, 3));
+  const named = weekday && name(WEEKDAYS, new Date(Date.UTC(y, m - 1, d)).getUTCDay(), weekday);
+  return [named && (year ? `${named},` : named), String(d), month && name(MONTHS, m - 1, month), year && String(y)].filter(Boolean).join(" ");
+}
 /** "5 Oct – 11 Oct", with the years when the week isn't in this one, as in the Cyclops web app. */
 export function weekRange(monday: string) {
   const sunday = addDays(monday, 6);
@@ -27,7 +39,10 @@ export function weekRange(monday: string) {
 }
 /** "Today", or a day like "Wed 7 Oct". */
 export const dayName = (day: string) => (day === today() ? "Today" : dayLabel(day, { weekday: "short", day: "numeric", month: "short", year: day.startsWith(today().slice(0, 4)) ? undefined : "numeric" }));
-export const clockTime = (iso: string) => new Intl.DateTimeFormat("en-GB", { timeZone: tz(), hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
+export const clockTime = (iso: string) => {
+  const at = new Date(iso);
+  return WINGS_NATIVE ? `${pad(at.getHours())}:${pad(at.getMinutes())}` : new Intl.DateTimeFormat("en-GB", { timeZone: tz(), hour: "2-digit", minute: "2-digit" }).format(at);
+};
 export function duration(minutes: number) {
   const h = Math.floor(minutes / 60);
   const m = Math.round(minutes % 60);
@@ -40,6 +55,7 @@ export function elapsed(startedAt: string) {
 export const runningMinutes = () => state.timers.reduce((sum, t) => sum + (Date.now() - Date.parse(t.startedAt)) / 60_000, 0);
 /** How far the user's timezone is ahead of UTC at an instant, in ms. */
 function offsetAt(t: number) {
+  if (WINGS_NATIVE) return -new Date(t).getTimezoneOffset() * 60_000;
   const parts = new Intl.DateTimeFormat("en-US", { timeZone: tz(), hourCycle: "h23", year: "numeric", month: "numeric", day: "numeric", hour: "numeric", minute: "numeric", second: "numeric" }).formatToParts(t);
   const p = Object.fromEntries(parts.map((x) => [x.type, Number(x.value)]));
   return Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second) - Math.floor(t / 1000) * 1000;

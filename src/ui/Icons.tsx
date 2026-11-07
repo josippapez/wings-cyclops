@@ -1,5 +1,5 @@
 import type { ComponentPropsWithoutRef } from "react";
-import { Button } from "wings-plugin-ui";
+import { Button, Icon } from "wings-plugin-ui";
 
 /** The Cyclops web app's row icons, and arrows for the weeks. */
 const ICONS = {
@@ -18,9 +18,18 @@ const ICONS = {
   },
 };
 
+const NATIVE = { resume: "Resume", edit: "Edit", previous: "‹", next: "›" };
+
 /** A button showing only an icon. `label` names it for screen readers. */
 export function IconButton({ name, label, ...props }: { name: keyof typeof ICONS; label: string } & ComponentPropsWithoutRef<"button">) {
   const { size, stroke, paths } = ICONS[name];
+  // The native app draws no SVG, and its icons have only a bin of these, so the others are words or arrows.
+  if (WINGS_NATIVE)
+    return (
+      <Button variant="ghost" size={name === "delete" ? "icon-sm" : "sm"} aria-label={label} {...props}>
+        {name === "delete" ? <Icon name="trash" /> : NATIVE[name]}
+      </Button>
+    );
   return (
     <Button variant="ghost" className={`icon ${name}`} aria-label={label} title={label} {...props}>
       <svg viewBox={`0 0 ${size} ${size}`} fill="none" stroke="currentColor" strokeWidth={stroke} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

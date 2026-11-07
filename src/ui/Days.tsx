@@ -10,6 +10,7 @@ import type { Entry } from "../lib/types";
 import { Confirm } from "./Confirm";
 import { Edit } from "./Edit";
 import { IconButton } from "./Icons";
+import { Box, DayButton, H2, Inline, Item, Strong, Unordered } from "./layout";
 import { ProjectLine } from "./Timer";
 
 /** The week's range with arrows, and a button for each of its days with its total. */
@@ -23,7 +24,7 @@ export function Week() {
     <Stack as="section" aria-label="Week">
       <Row gap="xs">
         <IconButton name="previous" label="Previous week" id="week-previous" onClick={() => show(addDays(selected, -7))} />
-        <h2 className="range">{weekRange(monday)}</h2>
+        <H2 className="range">{weekRange(monday)}</H2>
         {/* aria-disabled rather than disabled, as in the Cyclops web app, so focus stays on the button that got you here. */}
         <IconButton name="next" label="Next week" id="week-next" aria-disabled={current ? "true" : undefined} onClick={() => current || show(addDays(selected, 7))} />
         <Text grow />
@@ -39,7 +40,7 @@ export function Week() {
           Today
         </Button>
       </Row>
-      <div className="days">
+      <Box className="days">
         {Array.from({ length: 7 }, (_, i) => {
           const day = addDays(monday, i);
           const future = day > now;
@@ -47,7 +48,7 @@ export function Week() {
           // h:mm, like the title bar, so ten hours and more fit a 360 px sidebar.
           const total = minutes === null ? "" : minutes ? `${Math.floor(Math.round(minutes) / 60)}:${String(Math.round(minutes) % 60).padStart(2, "0")}` : "–";
           return (
-            <button
+            <DayButton
               key={day}
               className="day"
               type="button"
@@ -58,12 +59,12 @@ export function Week() {
               disabled={future}
               onClick={() => (day === selected && !state.wholeWeek) || ((state.wholeWeek = false), show(day))}
             >
-              <span className="name">{dayLabel(day, { weekday: "short", day: "numeric" })}</span>
-              <span className={minutes ? "total" : "total muted"}>{total}</span>
-            </button>
+              <Inline className="name">{dayLabel(day, { weekday: "short", day: "numeric" })}</Inline>
+              <Inline className={minutes ? "total" : "total muted"}>{total}</Inline>
+            </DayButton>
           );
         })}
-      </div>
+      </Box>
     </Stack>
   );
 }
@@ -101,37 +102,37 @@ export function DayEntries({ day, done }: { day: string; done: Entry[] }) {
       </Text>
     );
   return (
-    <ul className="entries">
+    <Unordered className="entries">
       {listed.map((e, i) => {
         if (state.editing?.id === e.id)
           return (
-            <li key={e.id}>
+            <Item key={e.id}>
               <Edit entry={e} />
-            </li>
+            </Item>
           );
         // Once this row is gone, focus moves to the same button on the next one.
         const neighbour = listed[i + 1] ?? listed[i - 1];
         if (state.confirming === e.id)
           return (
-            <li key={e.id} className="entry">
+            <Item key={e.id} className="entry">
               <Confirm entry={e} question="Delete this entry?" keep="Cancel" after={neighbour ? `delete-${neighbour.id}` : `day-${day}`} />
-            </li>
+            </Item>
           );
         const key = `resume:${e.id}`;
         const name = e.task || "entry";
         return (
-          <li key={e.id} className="entry">
+          <Item key={e.id} className="entry">
             <Stack gap="none" grow>
               <Text as="div" truncate>
                 {e.task || "No description"}
               </Text>
               <ProjectLine id={e.projectId} />
             </Stack>
-            <div className="when">
-              <strong>{duration(e.durationMinutes ?? 0)}</strong>
+            <Box className="when">
+              <Strong>{duration(e.durationMinutes ?? 0)}</Strong>
               {`${clockTime(e.startedAt)}–${clockTime(e.endedAt!)}`}
-            </div>
-            <div className="actions">
+            </Box>
+            <Box className="actions">
               <IconButton
                 name="resume"
                 label={`Resume ${name}`}
@@ -140,11 +141,11 @@ export function DayEntries({ day, done }: { day: string; done: Entry[] }) {
               />
               <IconButton name="edit" label={`Edit ${name}`} id={`edit-${e.id}`} onClick={() => openEdit(e)} />
               <IconButton name="delete" label={`Delete ${name}`} id={`delete-${e.id}`} onClick={() => openConfirm(e.id)} />
-            </div>
-          </li>
+            </Box>
+          </Item>
         );
       })}
-    </ul>
+    </Unordered>
   );
 }
 

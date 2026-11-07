@@ -9,27 +9,30 @@ import type { Me, Project } from "../lib/types";
 export function Connect() {
   const [token, setToken] = useState("");
   const busy = state.busy.has("connect");
+  const submit = () => {
+    if (!token.trim()) return;
+    void act("connect", async () => {
+      await wings.secrets.set("token", token.trim());
+      try {
+        state.me = await api<Me>("/auth/me");
+        state.projects = await api<Project[]>("/projects");
+        await loadHistory();
+      } catch (error) {
+        await wings.secrets.delete("token");
+        // The token stays in its field, with focus, to be corrected.
+        focus.next = "token";
+        throw error instanceof SignedOut ? new Error("That token didn't work. Check it's a Cyclops API token starting with cyc_.") : error;
+      }
+      state.phase = "ready";
+    });
+  };
   return (
     <Card
       as="form"
       className="connect"
       onSubmit={(e) => {
         e.preventDefault();
-        if (!token.trim()) return;
-        void act("connect", async () => {
-          await wings.secrets.set("token", token.trim());
-          try {
-            state.me = await api<Me>("/auth/me");
-            state.projects = await api<Project[]>("/projects");
-            await loadHistory();
-          } catch (error) {
-            await wings.secrets.delete("token");
-            // The token stays in its field, with focus, to be corrected.
-            focus.next = "token";
-            throw error instanceof SignedOut ? new Error("That token didn't work. Check it's a Cyclops API token starting with cyc_.") : error;
-          }
-          state.phase = "ready";
-        });
+        submit();
       }}
     >
       <Title>Connect Cyclops</Title>
@@ -39,8 +42,18 @@ export function Connect() {
       <Button variant="ghost" className="start" onClick={() => void wings.openUrl(`${WEB}/settings`)}>
         Open Cyclops Settings
       </Button>
-      <TextInput id="token" type="password" label="API token" placeholder="cyc_…" autoComplete="off" value={token} onChange={(e) => setToken(e.target.value)} />
-      <Button variant="default" type="submit" busy={busy}>
+      <TextInput
+        id="token"
+        type="password"
+        label="API token"
+        placeholder="cyc_…"
+        autoComplete="off"
+        value={token}
+        onChange={(e) => setToken(e.target.value)}
+        onKeyDown={WINGS_NATIVE ? (e) => e.key === "Enter" && submit() : undefined}
+      />
+      {/* The native app has no form to submit. */}
+      <Button variant="default" type="submit" busy={busy} onClick={WINGS_NATIVE ? submit : undefined}>
         {busy ? "Connecting…" : "Connect"}
       </Button>
     </Card>

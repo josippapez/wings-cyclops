@@ -9,6 +9,7 @@ import type { Entry } from "../lib/types";
 import { Confirm } from "./Confirm";
 import { Edit } from "./Edit";
 import { IconButton } from "./Icons";
+import { Box } from "./layout";
 
 const projectName = (id: string) => {
   const p = state.projects.find((x) => x.id === id);
@@ -35,9 +36,9 @@ export function Timer({ timer }: { timer: Entry }) {
         <Text as="div" weight="strong" grow className="task">
           {timer.task || "No description"}
         </Text>
-        <div className="clock" data-started={timer.startedAt}>
+        <Box className="clock" data-started={timer.startedAt}>
           {elapsed(timer.startedAt)}
-        </div>
+        </Box>
       </Row>
       {state.confirming === timer.id ? (
         <Confirm entry={timer} question="Delete this timer? Its time won't be saved." keep="Keep running" after="task" />

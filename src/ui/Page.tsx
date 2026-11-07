@@ -15,7 +15,8 @@ export function Page({ view: View }: { view: ComponentType }) {
   useLayoutEffect(() => {
     const focused = focus.next;
     focus.next = null;
-    if (focused) document.getElementById(focused)?.focus();
+    // The native app has no document; its fields and buttons keep their own focus.
+    if (focused && !WINGS_NATIVE) document.getElementById(focused)?.focus();
   });
   // A new element each time, so the page under it draws again rather than React keeping the last one.
   return <View />;
@@ -23,10 +24,13 @@ export function Page({ view: View }: { view: ComponentType }) {
 
 /** Loads Cyclops, keeps the clocks ticking and the data fresh, and follows the main script's messages. Returns what stops them. */
 function startPage() {
-  // Running clocks tick every second without a reload; the data refreshes every minute.
-  const ticking = setInterval(() => {
-    for (const el of document.querySelectorAll<HTMLElement>("[data-started]")) el.textContent = elapsed(el.dataset.started ?? "");
-  }, 1000);
+  // Running clocks tick every second without a reload; the data refreshes every minute. In the native app each clock
+  // ticks itself (layout-native.tsx), as there is no document to write into.
+  const ticking = WINGS_NATIVE
+    ? undefined
+    : setInterval(() => {
+        for (const el of document.querySelectorAll<HTMLElement>("[data-started]")) el.textContent = elapsed(el.dataset.started ?? "");
+      }, 1000);
   // Changes made in the Cyclops web app or on a phone only show when asked for, so this asks: every minute while Wings
   // is in front, once when you come back to it, and when the sidebar or popover is shown again.
   // Not while an entry is being edited: a render moves the caret of a time field back to its hours.
@@ -35,7 +39,7 @@ function startPage() {
   };
   const stopPolling = pollWhileFocused(quiet, 60_000);
   const onVisible = () => document.visibilityState === "visible" && quiet();
-  document.addEventListener("visibilitychange", onVisible);
+  if (!WINGS_NATIVE) document.addEventListener("visibilitychange", onVisible);
 
   // Claude started or stopped a timer, or changed or deleted an entry, through the plugin's tools. The entry may be
   // in any week, so earlier weeks load again when you next go to them.
@@ -49,7 +53,7 @@ function startPage() {
   return () => {
     clearInterval(ticking);
     stopPolling();
-    document.removeEventListener("visibilitychange", onVisible);
+    if (!WINGS_NATIVE) document.removeEventListener("visibilitychange", onVisible);
     stopListening();
   };
 }

@@ -1,7 +1,7 @@
 // ---------- fields with suggestions ----------
 
 import { useReducer } from "react";
-import { Combobox } from "wings-plugin-ui";
+import { Combobox, Field, Select } from "wings-plugin-ui";
 
 import { suggest } from "../lib/data";
 import { focus, state } from "../lib/state";
@@ -48,6 +48,20 @@ export function TaskBox(o: { id: string; label: string; placeholder: string; tex
 export function ProjectBox({ id, value, onChange }: { id: string; value: () => string; onChange: (id: string) => void }) {
   const { redraw, openOnFocus } = useField(id);
   const picked = state.projects.find((x) => x.id === value());
+  // The native Combobox's field shows what is typed, not the project picked, so the native app picks it from a list.
+  if (WINGS_NATIVE)
+    return (
+      <Field label="Project">
+        <Select
+          options={[{ value: "", label: "Choose a project", disabled: true }, ...state.projects.map((p) => ({ value: p.id, label: projectLabel(p) }))]}
+          value={picked?.id ?? ""}
+          onChange={(id) => {
+            onChange(id);
+            redraw();
+          }}
+        />
+      </Field>
+    );
   return (
     <Combobox
       className="combo"

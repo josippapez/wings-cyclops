@@ -57,22 +57,25 @@ function Add() {
       />
     </Field>
   );
+  const submit = () => {
+    if (busy || !state.projectId) return;
+    if (!manual) return startTimer();
+    if (!adding.start || !adding.end) return set({ error: "Enter a start and an end time." });
+    if (adding.end <= adding.start) return set({ error: "The end time must be after the start." });
+    const { start, end } = range({ day: today(), start: adding.start, end: adding.end });
+    const body = { ...newEntry(), startedAt: start?.toISOString(), endedAt: end?.toISOString() };
+    void act("add", async () => {
+      await api("/time-entries", { method: "POST", body });
+      state.task = "";
+      adding.start = adding.end = "";
+    });
+  };
   return (
     <Card
       as="form"
       onSubmit={(e) => {
         e.preventDefault();
-        if (busy || !state.projectId) return;
-        if (!manual) return startTimer();
-        if (!adding.start || !adding.end) return set({ error: "Enter a start and an end time." });
-        if (adding.end <= adding.start) return set({ error: "The end time must be after the start." });
-        const { start, end } = range({ day: today(), start: adding.start, end: adding.end });
-        const body = { ...newEntry(), startedAt: start?.toISOString(), endedAt: end?.toISOString() };
-        void act("add", async () => {
-          await api("/time-entries", { method: "POST", body });
-          state.task = "";
-          adding.start = adding.end = "";
-        });
+        submit();
       }}
     >
       <Row>
@@ -103,7 +106,8 @@ function Add() {
       ) : null}
       <Row>
         {manual ? hint : <Text grow />}
-        <Button variant="default" type="submit" disabled={busy || !state.projectId}>
+        {/* The native app has no form to submit. */}
+        <Button variant="default" type="submit" disabled={busy || !state.projectId} onClick={WINGS_NATIVE ? submit : undefined}>
           {manual ? (busy ? "Adding…" : "Add") : busy ? "Starting…" : "Start"}
         </Button>
       </Row>

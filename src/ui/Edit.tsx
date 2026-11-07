@@ -33,6 +33,22 @@ export function Edit({ entry }: { entry: Entry }) {
       />
     </Field>
   );
+  const submit = () => {
+    if (busy) return;
+    let body;
+    try {
+      body = changes(entry, draft);
+    } catch (error) {
+      return set({ error: error instanceof Error ? error.message : String(error) });
+    }
+    if (Object.keys(body).length === 0) return closeEdit(entry.id);
+    void act(key, async () => {
+      await api(`/time-entries/${entry.id}`, { method: "PATCH", body });
+      if (state.editing !== draft) return;
+      state.editing = null;
+      focus.next = `edit-${entry.id}`;
+    });
+  };
   return (
     <Card
       as="form"
@@ -44,20 +60,7 @@ export function Edit({ entry }: { entry: Entry }) {
       }}
       onSubmit={(e) => {
         e.preventDefault();
-        if (busy) return;
-        let body;
-        try {
-          body = changes(entry, draft);
-        } catch (error) {
-          return set({ error: error instanceof Error ? error.message : String(error) });
-        }
-        if (Object.keys(body).length === 0) return closeEdit(entry.id);
-        void act(key, async () => {
-          await api(`/time-entries/${entry.id}`, { method: "PATCH", body });
-          if (state.editing !== draft) return;
-          state.editing = null;
-          focus.next = `edit-${entry.id}`;
-        });
+        submit();
       }}
     >
       <TaskBox id="edit-task" label="Task" placeholder="What have you worked on?" text={() => draft.task} onChange={(task) => (draft.task = task)} projectId={() => draft.projectId} />
@@ -72,7 +75,8 @@ export function Edit({ entry }: { entry: Entry }) {
         <Button variant="ghost" onClick={() => closeEdit(entry.id)}>
           Cancel
         </Button>
-        <Button variant="default" type="submit" id="edit-save" busy={busy}>
+        {/* The native app has no form to submit. */}
+        <Button variant="default" type="submit" id="edit-save" busy={busy} onClick={WINGS_NATIVE ? submit : undefined}>
           {busy ? "Saving…" : "Save"}
         </Button>
       </Row>
