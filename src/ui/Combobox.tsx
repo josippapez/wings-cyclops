@@ -1,7 +1,7 @@
 // ---------- fields with suggestions ----------
 
 import { useReducer } from "react";
-import { Combobox, Field, Select } from "wings-plugin-ui";
+import { Combobox, Select } from "wings-plugin-ui";
 
 import { suggest } from "../lib/data";
 import { focus, state } from "../lib/state";
@@ -38,7 +38,9 @@ export function TaskBox(o: { id: string; label: string; placeholder: string; tex
       autoFocus={o.autoFocus}
       value={text}
       onInput={change}
-      options={suggest(text, o.projectId()).map((s) => ({ value: s.task, label: s.task }))}
+      // The native app has no list that opens on focus: it shows the suggestions under the field all the time, where
+      // eight recent tasks pushed the popover's Start button out of sight. There they wait for something typed.
+      options={WINGS_NATIVE && !text.trim() ? [] : suggest(text, o.projectId()).map((s) => ({ value: s.task, label: s.task }))}
       onPick={(option) => change(option.value)}
       empty={text.trim() ? "No matching tasks." : "No recent tasks yet."}
     />
@@ -50,18 +52,18 @@ export function ProjectBox({ id, value, onChange }: { id: string; value: () => s
   const { redraw, openOnFocus } = useField(id);
   const picked = state.projects.find((x) => x.id === value());
   // The native Combobox's field shows what is typed, not the project picked, so the native app picks it from a list.
+  // Named for screen readers only, like the browser's field, so the Start button beside it sits level with it.
   if (WINGS_NATIVE)
     return (
-      <Field label="Project">
-        <Select
-          options={[{ value: "", label: "Choose a project", disabled: true }, ...state.projects.map((p) => ({ value: p.id, label: projectLabel(p) }))]}
-          value={picked?.id ?? ""}
-          onChange={(id) => {
-            onChange(id);
-            redraw();
-          }}
-        />
-      </Field>
+      <Select
+        label="Project"
+        options={[{ value: "", label: "Choose a project", disabled: true }, ...state.projects.map((p) => ({ value: p.id, label: projectLabel(p) }))]}
+        value={picked?.id ?? ""}
+        onChange={(id) => {
+          onChange(id);
+          redraw();
+        }}
+      />
     );
   return (
     <Combobox
