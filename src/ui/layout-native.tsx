@@ -1,4 +1,4 @@
-import { useEffect, useState, type HTMLAttributes } from "react";
+import { Children, isValidElement, useEffect, useState, type HTMLAttributes } from "react";
 import { Chip, List, ListItem, Row, Stack, Text } from "wings-plugin-ui";
 
 import { elapsed } from "../lib/dates";
@@ -8,9 +8,13 @@ export function Layout({ tag, className = "", children, ...props }: HTMLAttribut
   const classes = className.split(" ");
   if (classes.includes("clock")) return <Clock started={props["data-started"] ?? ""} />;
   if (tag === "ul") return <List>{children}</List>;
-  // An entry's task, times and buttons side by side, the buttons under them when the row is too narrow for all three.
-  // In the browser the buttons show in place of the times on hover.
-  if (tag === "li") return <ListItem>{classes.includes("entry") ? <Row gap="s" wrap>{children}</Row> : children}</ListItem>;
+  // An entry's task and times side by side, and its buttons in place of the times while you point at it or tab into
+  // them, as in the browser.
+  if (tag === "li") {
+    const parts = Children.toArray(children);
+    const actions = parts.find((part) => isValidElement<{ className?: string }>(part) && part.props.className === "actions");
+    return <ListItem actions={actions}>{parts.filter((part) => part !== actions)}</ListItem>;
+  }
   if (classes.includes("days"))
     return (
       <Row gap="xs" wrap>
@@ -18,8 +22,16 @@ export function Layout({ tag, className = "", children, ...props }: HTMLAttribut
       </Row>
     );
   if (classes.includes("actions")) return <Row gap="xs">{children}</Row>;
-  if (classes.includes("when")) return <Stack gap="none">{children}</Stack>;
-  if (tag === "strong") return <Text weight="medium">{children}</Text>;
+  // sidebar.css's `.entry .when`: the duration over the times, at 12px, to the right.
+  if (classes.includes("when"))
+    return (
+      <Stack gap="none">
+        {Children.map(children, (line) => (
+          <Row justify="end">{typeof line === "string" ? <Text size="small" tone="muted" numeric>{line}</Text> : line}</Row>
+        ))}
+      </Stack>
+    );
+  if (tag === "strong") return <Text size="small" weight="medium" numeric>{children}</Text>;
   if (tag === "h2")
     return (
       <Text size="small" weight="medium">
