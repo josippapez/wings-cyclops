@@ -14,6 +14,6 @@
     "react-dom": "^19.1.0",
     "typescript": "~6.0.3",
     "wings-plugin-sdk": "^0.25.0",
-    "wings-plugin-ui": "^0.14.7"
+    "wings-plugin-ui": "^0.14.9"
   }
 }
