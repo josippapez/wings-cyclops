@@ -1,0 +1,25 @@
+[package]
+name = "cyclops-sidebar"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Trial: Cyclops' sidebar page in Rust, built to WebAssembly for the native Wings app."
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+wings-plugin = { path = "../../wings/packages/plugin-rs" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[features]
+# Made-up Cyclops answers in place of `wings.fetch` and the token, for rendering the page with nothing real behind it.
+fake = []
