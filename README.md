@@ -23,11 +23,14 @@ With Wings connected to Claude Code (Plugins, Claude Code, Connect), Claude gets
 
 ## Install
 
-The code is TypeScript and React in `src/`, built with [wings-plugin-sdk](https://www.npmjs.com/package/wings-plugin-sdk); the repo holds only source. Build the package:
+The plugin is written twice. In Wings 0.2.17 and later it runs from Rust: `rust/` builds its title bar button and tools, its sidebar and its popover to WebAssembly, with the Rust SDK in the Wings repo (`packages/plugin-rs`). The TypeScript and React in `src/`, built with [wings-plugin-sdk](https://www.npmjs.com/package/wings-plugin-sdk), is the same plugin and ships beside it. The repo holds only source. Build the package:
 
 ```sh
+rustup target add wasm32-unknown-unknown   # once
+sh rust/build.sh                           # the Rust frames, into dist/native/
 npm install
-npm run check   # type-checks, then writes cyclops.wings-plugin
+npm run check                              # type-checks, then writes cyclops.wings-plugin
+zip -d cyclops.wings-plugin 'rust/*'       # the package would carry rust/ and its build folder otherwise
 ```
 
 Drop `cyclops.wings-plugin` on the Wings window, or pick it under Plugins, Choose a file, then turn it on in Plugins.

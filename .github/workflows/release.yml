@@ -24,8 +24,16 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 24
+      # The frames written in Rust, into dist/native/, which the package takes as they are.
+      - name: Build the Rust frames
+        run: |
+          rustup target add wasm32-unknown-unknown
+          sh rust/build.sh
       - name: Check, build and package
         run: npm ci && npm run check
+      # wings-plugin pack ships every folder it doesn't know as source, and rust/ with its build folder is 80 MB.
+      - name: Leave the Rust source out of the package
+        run: zip -d "$(jq -r .id wings-plugin.json).wings-plugin" 'rust/*'
       - name: Release
         env:
           GH_TOKEN: ${{ github.token }}

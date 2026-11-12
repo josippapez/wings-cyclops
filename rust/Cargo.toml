@@ -9,7 +9,9 @@ description = "Trial: Cyclops in Rust, built to WebAssembly for the native Wings
 crate-type = ["cdylib"]
 
 [dependencies]
-wings-plugin = { path = "../../wings/packages/plugin-rs" }
+# The Rust SDK, from the Wings repo at the commit of Wings 0.2.17. For work on the SDK itself, point it at a checkout:
+# cargo build --config 'patch."https://github.com/josippapez/Wings".wings-plugin.path="../../wings/packages/plugin-rs"'
+wings-plugin = { git = "https://github.com/josippapez/Wings", rev = "4f06883c" }
 serde = { version = "1", features = ["derive"] }
 # Keys in the order they are written, so what a tool answers Claude reads as the TypeScript tool's did.
 serde_json = { version = "1", features = ["preserve_order"] }
