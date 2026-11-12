@@ -46,12 +46,22 @@ pub async fn fetch(url: &str, method: &str, body: Option<&Value>, _bearer: Optio
         match (method, one) {
             ("POST", Some("timer")) => {
                 let mut timer = body.cloned().unwrap_or_default();
-                timer["id"] = format!("t{}", host::now()).into();
+                timer["id"] = format!("t{}", host::now() as u64).into();
                 timer["startedAt"] = iso(host::now()).into();
                 timer["endedAt"] = Value::Null;
                 timer["entryDate"] = day_of(host::now()).into();
-                fake.timers.push(timer);
-                json!({})
+                fake.timers.push(timer.clone());
+                timer
+            }
+            // A manual entry, with its start and end.
+            ("POST", None) if path == "/time-entries" => {
+                let mut entry = body.cloned().unwrap_or_default();
+                let (start, end) = (parse(entry["startedAt"].as_str().unwrap_or_default()), parse(entry["endedAt"].as_str().unwrap_or_default()));
+                entry["id"] = format!("e{}", host::now() as u64).into();
+                entry["entryDate"] = day_of(start).into();
+                entry["durationMinutes"] = ((end - start) / MINUTE).round().into();
+                fake.entries.insert(0, entry.clone());
+                entry
             }
             ("POST", Some(stop)) if stop.ends_with("/stop") => {
                 let id = stop.trim_end_matches("/stop");
@@ -64,12 +74,14 @@ pub async fn fetch(url: &str, method: &str, body: Option<&Value>, _bearer: Optio
                 json!({})
             }
             ("PATCH", Some(id)) => {
+                let mut changed = json!({});
                 for entry in fake.timers.iter_mut().chain(&mut fake.entries).filter(|e| e["id"] == id) {
                     for (key, value) in body.and_then(Value::as_object).into_iter().flatten() {
                         entry[key] = value.clone();
                     }
+                    changed = entry.clone();
                 }
-                json!({})
+                changed
             }
             ("DELETE", Some(id)) => {
                 fake.timers.retain(|e| e["id"] != id);

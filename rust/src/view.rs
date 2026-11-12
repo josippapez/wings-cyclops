@@ -1,13 +1,13 @@
 //! The page, built from the state: what `src/ui/Sidebar.tsx` and the components under it draw in the native app.
 
 use crate::{
-    Draft, Entry, Phase, State, WEB, close_confirm, close_edit, connect, dates, delete, open_confirm, open_edit, range, reload, resume, save,
-    selected_day, show, shown_week, sign_out, start_timer, stop, suggest, with,
+    Draft, Entry, Phase, State, WEB, add_entry, close_confirm, close_edit, connect, dates, delete, open_confirm, open_edit, range, reload,
+    resume, save, selected_day, show, shown_week, sign_out, start_timer, stop, suggest, with,
 };
-use dates::{Style, add_days, clock_time, day_label, day_name, duration, elapsed, minutes_on, running_minutes, today, week_range, week_start};
+use dates::{Style, add_days, at_time, clock_time, day_label, day_name, duration, elapsed, minutes_on, running_minutes, today, week_range, week_start};
 use wings_plugin::{
     host,
-    ui::{Choice, Combobox, Node, button, card, combobox, dot, field_inline, heading, icon, list, list_item, muted, row, spinner, stack, text, text_input, title},
+    ui::{Choice, Combobox, Node, button, card, chips, combobox, dot, field_inline, heading, icon, list, list_item, muted, row, spinner, stack, text, text_input, title},
 };
 
 // The Cyclops web app's row icons, and arrows for the weeks: a view box's size, a stroke width and paths.
@@ -131,13 +131,13 @@ fn timer_card(s: &State, timer: &Entry) -> Node {
 }
 
 /// A task field suggesting recent tasks, the project's own first.
-fn task_box(s: &State, label: &'static str, value: &str, project_id: &str, auto_focus: bool, on_text: impl Fn(String) + 'static) -> Node {
+fn task_box(s: &State, label: &'static str, placeholder: &'static str, value: &str, project_id: &str, auto_focus: bool, on_text: impl Fn(String) + 'static) -> Node {
     let on_text = std::rc::Rc::new(on_text);
     let picked = on_text.clone();
     combobox(
         Combobox {
             label,
-            placeholder: if auto_focus { "What have you worked on?" } else { "What are you working on?" },
+            placeholder,
             value: value.to_owned(),
             query: None,
             options: suggest(s, value, project_id).into_iter().map(|task| Choice { value: task.clone(), label: task, detail: None }).collect(),
@@ -176,7 +176,7 @@ fn project_box(s: &State, name: &'static str, value: &str, on_pick: impl Fn(Stri
 
 fn start_form(s: &State) -> Node {
     let busy = s.busy.contains("start");
-    card().child(task_box(s, "What are you working on?", &s.task, &s.project_id, false, |task| with(|s| s.task = task))).child(
+    card().child(task_box(s, "What are you working on?", "What are you working on?", &s.task, &s.project_id, false, |task| with(|s| s.task = task))).child(
         row().child(project_box(s, "project", &s.project_id, |id| with(|s| s.project_id = id))).child(
             Node::new("Button")
                 .prop("variant", "default")
@@ -210,7 +210,7 @@ fn edit_form(s: &State, entry: &Entry) -> Node {
     };
     let saved = entry.clone();
     card()
-        .child(task_box(s, "Task", &editing.task, &editing.project_id, true, |task| draft(|d| d.task = task)))
+        .child(task_box(s, "Task", "What have you worked on?", &editing.task, &editing.project_id, true, |task| draft(|d| d.task = task)))
         .child(project_box(s, "edit-project", &editing.project_id, |id| draft(|d| d.project_id = id)))
         .child(row().child(time(if editing.running { "Started" } else { "Start" }, &editing.start, false)).maybe((!editing.running).then(|| time("End", &editing.end, true))))
         // The duration beside the buttons: beside the times, a 360 px sidebar has no room for it.
@@ -357,4 +357,100 @@ fn entries(s: &State) -> Node {
             ]
         }))
         .child(row().prop("justify", "between").child(summary(if current { "This week".into() } else { week_range(&monday) })).child(summary(duration(total))))
+}
+
+// ---------- the popover: `src/ui/Popover.tsx` ----------
+
+/// The popover under the title bar button: the same timers and today's entries as the sidebar, compact, with a manual
+/// entry form and no other days.
+pub fn popover(s: &State) -> Vec<Node> {
+    let mut page = vec![
+        row()
+            .key("head")
+            .child(title("Cyclops"))
+            .child(Node::new("Text").prop("grow", true))
+            .child(muted(s.name.clone()).prop("size", "small").prop("truncate", true))
+            .child(button("Refresh", "ghost", s.busy.contains("refresh"), reload))
+            .child(button("Open Cyclops", "ghost", false, || host::open_view("tracker"))),
+    ];
+    match s.phase {
+        Phase::Loading => page.push(loading("Loading Cyclops…").key("loading")),
+        Phase::Connect => page.push(muted("Connect Cyclops in the sidebar to track time from here.").key("connect")),
+        Phase::Ready => {
+            page.extend(s.timers.iter().map(|timer| timer_card(s, timer).key(format!("timer-{}", timer.id))));
+            page.push(add_form(s).key("add"));
+        }
+    }
+    // Under the form rather than at the end, which a long day pushes out of the popover.
+    if let Some(error) = &s.error {
+        page.push(text(error.clone()).key("error").prop("tone", "danger").prop("size", "small"));
+    }
+    if s.phase == Phase::Ready {
+        // Today's finished entries; other days are in the sidebar.
+        page.push(match s.weeks.get(&week_start(0)) {
+            None => loading("Loading today…").key("today"),
+            Some(week) => {
+                let done: Vec<&Entry> = week.iter().filter(|e| e.ended_at.is_some()).collect();
+                stack().key("today").child(day_entries(s, &today(), &done))
+            }
+        });
+    }
+    page
+}
+
+/// Starts a timer, or adds an entry for today with a start and an end, and shows today's total.
+fn add_form(s: &State) -> Node {
+    let manual = s.adding.manual;
+    let busy = s.busy.contains(if manual { "add" } else { "start" });
+    let total = s.weeks.get(&week_start(0)).map_or_else(|| "–".to_owned(), |week| duration(minutes_on(s, week, &today())));
+    let time = |label: &'static str, value: &str, end: bool| {
+        field_inline(label, text_input(label, value, move |time| with(|s| if end { s.adding.end = time } else { s.adding.start = time })).prop("type", "time"))
+    };
+    // The duration beside the button follows the times as you type.
+    let hint = if manual && !s.adding.start.is_empty() && s.adding.end > s.adding.start {
+        duration((at_time(&today(), &s.adding.end) - at_time(&today(), &s.adding.start)) / 60_000.0)
+    } else {
+        String::new()
+    };
+    let label = match (manual, busy) {
+        (true, true) => "Adding…",
+        (true, false) => "Add",
+        (false, true) => "Starting…",
+        (false, false) => "Start",
+    };
+    card()
+        .child(
+            row()
+                .child(chips("Add", &[("timer", "Timer"), ("manual", "Manual")], if manual { "manual" } else { "timer" }, |value| {
+                    let manual = value == "manual";
+                    with(|s| {
+                        if s.adding.manual != manual {
+                            s.adding.manual = manual;
+                            s.error = None;
+                        }
+                    });
+                }))
+                .child(Node::new("Text").prop("grow", true))
+                .child(muted("Today · ").prop("size", "small").child(text(total).prop("weight", "medium").prop("numeric", true))),
+        )
+        .child(task_box(
+            s,
+            "What are you working on?",
+            if manual { "What did you work on?" } else { "What are you working on?" },
+            &s.task,
+            &s.project_id,
+            false,
+            |task| with(|s| s.task = task),
+        ))
+        .child(project_box(s, "project", &s.project_id, |id| with(|s| s.project_id = id)))
+        .maybe(manual.then(|| row().child(time("Start", &s.adding.start, false)).child(time("End", &s.adding.end, true))))
+        .child(
+            row().child(muted(hint).prop("grow", true)).child(
+                Node::new("Button")
+                    .prop("variant", "default")
+                    .prop("disabled", busy || s.project_id.is_empty())
+                    .on("onClick", move |_| if manual { add_entry() } else { start_timer() })
+                    .text(label),
+            ),
+        )
 }

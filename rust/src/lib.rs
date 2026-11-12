@@ -1,10 +1,17 @@
-//! Trial: Cyclops' sidebar as a Rust page for the native Wings app, a port of `src/ui/Sidebar.tsx` and what it uses of
-//! `src/lib`. It talks to the plugin's TypeScript main script over the same channel, and reaches Cyclops through
-//! `wings.fetch`, which adds the token in Wings, so this page never holds it.
+//! Trial: Cyclops in Rust for the native Wings app, a port of `src/`. One crate builds its three frames, each a
+//! module of its own: the sidebar (no feature), the popover (`--features popover`) and the main script
+//! (`--features main`, `main_frame.rs`), which `build.sh` writes to `dist/native/`. They tell each other about changes
+//! over the same channel the TypeScript frames use, and reach Cyclops through `wings.fetch`, which adds the token in
+//! Wings, so no frame ever holds it.
+
+// The main script draws nothing, so the pages' state and views are unused in its build, and left out of its module.
+#![cfg_attr(feature = "main", allow(dead_code, unused_imports))]
 
 mod dates;
 #[cfg(feature = "fake")]
 mod fake;
+#[cfg(feature = "main")]
+mod main_frame;
 mod view;
 
 use dates::{add_days, at_time, clock_time, day_of, monday_of, today, week_start};
@@ -15,7 +22,7 @@ use std::{
     collections::{HashMap, HashSet},
     future::Future,
 };
-use wings_plugin::{host, task};
+use wings_plugin::{host, messages, poll, task};
 
 const API: &str = "https://cyclops-api.prototyp.digital/api";
 pub const WEB: &str = "https://cyclops.prototyp.digital";
@@ -54,10 +61,20 @@ pub enum Phase {
     Ready,
 }
 
+/// The popover's form: a timer, or with `manual` an entry today from `start` to `end` (HH:MM).
+#[derive(Default)]
+pub struct Adding {
+    pub manual: bool,
+    pub start: String,
+    pub end: String,
+}
+
 pub struct Suggestion {
     pub task: String,
     pub project_ids: Vec<String>,
     pub last_used_at: f64,
+    /// Its place among the tasks as they were first seen, which orders two used at the same instant.
+    seen: usize,
 }
 
 /// An entry being edited, with its times as HH:MM on `day`.
@@ -91,6 +108,7 @@ pub struct State {
     pub project_id: String,
     pub editing: Option<Draft>,
     pub confirming: Option<String>,
+    pub adding: Adding,
     /// The token being typed in the connect form.
     pub token: String,
     /// What is typed in a project picker since it took the keyboard, by the picker's name.
@@ -98,7 +116,6 @@ pub struct State {
     /// The Monday being fetched. One week loads at a time.
     loading_week: Option<String>,
     ticking: bool,
-    last_poll: f64,
 }
 
 thread_local! {
@@ -164,9 +181,9 @@ fn signed_out(state: &mut State) {
     state.error = Some(SIGNED_OUT.into());
 }
 
-/// The main script keeps the title bar button current, and the popover its entries.
+/// The main script keeps the title bar button current, and the other page its entries.
 fn tell_changed() {
-    host::broadcast(&json!({ "wings:sdk": 1, "kind": "tell", "name": "timers-changed" }));
+    messages::tell("timers-changed", &Value::Null);
 }
 
 async fn load() {
@@ -221,7 +238,8 @@ fn remember(state: &mut State, list: &[Entry]) {
             continue;
         };
         let used = dates::parse(&entry.started_at);
-        let old = state.history.entry(task.to_lowercase()).or_insert_with(|| Suggestion { task: task.to_owned(), project_ids: Vec::new(), last_used_at: used });
+        let seen = state.history.len();
+        let old = state.history.entry(task.to_lowercase()).or_insert_with(|| Suggestion { task: task.to_owned(), project_ids: Vec::new(), last_used_at: used, seen });
         if !old.project_ids.contains(&entry.project_id) {
             old.project_ids.push(entry.project_id.clone());
         }
@@ -239,7 +257,7 @@ pub fn suggest(state: &State, query: &str, project_id: &str) -> Vec<String> {
     let has = |s: &Suggestion| s.project_ids.iter().any(|id| id == project_id);
     found.sort_by(|a, b| {
         let by_project = if project_id.is_empty() { std::cmp::Ordering::Equal } else { has(b).cmp(&has(a)) };
-        by_project.then(b.last_used_at.total_cmp(&a.last_used_at))
+        by_project.then(b.last_used_at.total_cmp(&a.last_used_at)).then(a.seen.cmp(&b.seen))
     });
     found.into_iter().take(8).map(|s| s.task.clone()).collect()
 }
@@ -391,6 +409,39 @@ pub fn start_timer() {
     act("start", async move {
         api("/time-entries/timer".into(), "POST", Some(body)).await?;
         with(|s| s.task.clear());
+        Ok(())
+    });
+}
+
+/// The popover's manual entry: today, from the form's start to its end.
+pub fn add_entry() {
+    let body = with(|s| {
+        if s.project_id.is_empty() {
+            return None;
+        }
+        if s.adding.start.is_empty() || s.adding.end.is_empty() {
+            s.error = Some("Enter a start and an end time.".into());
+            return None;
+        }
+        if s.adding.end <= s.adding.start {
+            s.error = Some("The end time must be after the start.".into());
+            return None;
+        }
+        let mut body = timer_body(&s.project_id, &s.task);
+        body["startedAt"] = dates::iso(at_time(&today(), &s.adding.start)).into();
+        body["endedAt"] = dates::iso(at_time(&today(), &s.adding.end)).into();
+        Some(body)
+    });
+    let Some(body) = body else {
+        return;
+    };
+    act("add", async move {
+        api("/time-entries".into(), "POST", Some(body)).await?;
+        with(|s| {
+            s.task.clear();
+            s.adding.start.clear();
+            s.adding.end.clear();
+        });
         Ok(())
     });
 }
@@ -576,10 +627,7 @@ pub fn close_confirm() {
 /// Changes made in the Cyclops web app or on a phone only show when asked for. Not while an entry is being edited or
 /// an action runs.
 fn quiet() {
-    let idle = with(|s| {
-        s.last_poll = host::now();
-        s.phase == Phase::Ready && s.busy.is_empty() && s.editing.is_none()
-    });
+    let idle = with(|s| s.phase == Phase::Ready && s.busy.is_empty() && s.editing.is_none());
     if idle {
         task::spawn(async {
             let _ = refresh(true).await;
@@ -587,17 +635,13 @@ fn quiet() {
     }
 }
 
-const POLL_MS: u32 = 60_000;
-
+#[cfg(not(feature = "main"))]
 #[unsafe(no_mangle)]
 pub fn start() {
-    wings_plugin::run(|| with(|state| view::page(state)));
-    // Claude, the popover or the main script started or stopped a timer, or changed or deleted an entry. The entry
+    wings_plugin::run(|| with(|state| if cfg!(feature = "popover") { view::popover(state) } else { view::page(state) }));
+    // Claude, the other page or the main script started or stopped a timer, or changed or deleted an entry. The entry
     // may be in any week, so earlier weeks load again when you next go to them.
-    host::on_broadcast(|message| {
-        if message["wings:sdk"] != 1 || message["kind"] != "tell" || message["name"] != "timers-changed" {
-            return;
-        }
+    messages::on("timers-changed", |_| {
         let ready = with(|s| {
             let (current, shown) = (week_start(0), shown_week(s));
             s.weeks.retain(|monday, _| *monday == current || *monday == shown);
@@ -610,18 +654,6 @@ pub fn start() {
         }
     });
     // Every minute while Wings is in front, and once when you come back to it after longer.
-    host::on_focus(|focused| {
-        if focused && host::now() - with(|s| s.last_poll) >= f64::from(POLL_MS) {
-            quiet();
-        }
-    });
-    task::spawn(async {
-        loop {
-            host::sleep(POLL_MS).await;
-            if host::focused() {
-                quiet();
-            }
-        }
-    });
+    poll::while_focused(60_000, false, quiet);
     task::spawn(load());
 }

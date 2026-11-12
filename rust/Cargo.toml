@@ -1,9 +1,9 @@
 [package]
-name = "cyclops-sidebar"
+name = "cyclops"
 version = "0.1.0"
 edition = "2024"
 publish = false
-description = "Trial: Cyclops' sidebar page in Rust, built to WebAssembly for the native Wings app."
+description = "Trial: Cyclops in Rust, built to WebAssembly for the native Wings app."
 
 [lib]
 crate-type = ["cdylib"]
@@ -11,7 +11,8 @@ crate-type = ["cdylib"]
 [dependencies]
 wings-plugin = { path = "../../wings/packages/plugin-rs" }
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+# Keys in the order they are written, so what a tool answers Claude reads as the TypeScript tool's did.
+serde_json = { version = "1", features = ["preserve_order"] }
 
 [profile.release]
 opt-level = "s"
@@ -21,5 +22,8 @@ panic = "abort"
 strip = true
 
 [features]
+# Which frame the module is: the sidebar with neither, the popover, or the main script. `build.sh` builds all three.
+popover = []
+main = []
 # Made-up Cyclops answers in place of `wings.fetch` and the token, for rendering the page with nothing real behind it.
 fake = []
