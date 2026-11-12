@@ -1,4 +1,4 @@
-//! The main script, a port of `src/main.ts`, `src/main/` and `src/tools.ts`: it keeps the running timer on the clock
+//! The main script: it keeps the running timer on the clock
 //! button, and runs the tools Claude calls. The pages and this script tell each other about changes over the channel,
 //! so a timer started in one shows in the other at once. Changes made elsewhere show on the next 30 s poll while Wings
 //! is in front, or at once when it comes back.
@@ -156,8 +156,13 @@ fn entry_info(e: &Entry, list: &HashMap<String, Project>) -> Value {
         "projectId": e.project_id,
         "startedAt": e.started_at,
         "endedAt": e.ended_at,
-        "minutes": e.duration_minutes,
+        "minutes": e.duration_minutes.map(whole),
     })
+}
+
+/// A number as JSON writes it from JavaScript: 177, not 177.0, when it is whole.
+fn whole(n: f64) -> Value {
+    if n.fract() == 0.0 && n.abs() < 9e15 { json!(n as i64) } else { json!(n) }
 }
 
 /// `encodeURIComponent`.

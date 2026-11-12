@@ -1,4 +1,4 @@
-//! Dates, in this Mac's timezone, as the TypeScript page has them in the native app (`src/lib/dates.ts`).
+//! Dates, in this Mac's timezone.
 
 use crate::{Entry, State};
 use wings_plugin::host;

@@ -1,12 +1,11 @@
 {
   "id": "cyclops",
   "name": "Cyclops",
-  "version": "0.9.7",
+  "version": "0.9.8",
   "minWingsVersion": "0.2.17",
   "description": "Track, edit and delete time in Cyclops from a sidebar or a quick popover, and let Claude do the same.",
   "api": 1,
-  "native": true,
-  "main": "dist/main.js",
+  "main": "dist/native/main.wasm",
   "permissions": {
     "fetch": [
       "https://cyclops-api.prototyp.digital/api/"
@@ -24,9 +23,9 @@
         "id": "tracker",
         "title": "Cyclops",
         "icon": "clock",
-        "page": "dist/sidebar.html",
+        "page": "dist/native/sidebar.wasm",
         "popover": {
-          "page": "dist/popover.html",
+          "page": "dist/native/popover.wasm",
           "width": 360,
           "height": 520
         }

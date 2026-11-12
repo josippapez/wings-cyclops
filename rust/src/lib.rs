@@ -1,7 +1,7 @@
-//! Trial: Cyclops in Rust for the native Wings app, a port of `src/`. One crate builds its three frames, each a
+//! Cyclops for the native Wings app. One crate builds its three frames, each a
 //! module of its own: the sidebar (no feature), the popover (`--features popover`) and the main script
 //! (`--features main`, `main_frame.rs`), which `build.sh` writes to `dist/native/`. They tell each other about changes
-//! over the same channel the TypeScript frames use, and reach Cyclops through `wings.fetch`, which adds the token in
+//! over the SDK's channel, and reach Cyclops through `wings.fetch`, which adds the token in
 //! Wings, so no frame ever holds it.
 
 // The main script draws nothing, so the pages' state and views are unused in its build, and left out of its module.

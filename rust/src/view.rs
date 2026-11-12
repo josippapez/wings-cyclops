@@ -1,4 +1,4 @@
-//! The page, built from the state: what `src/ui/Sidebar.tsx` and the components under it draw in the native app.
+//! The sidebar and the popover, built from the state.
 
 use crate::{
     Draft, Entry, Phase, State, WEB, add_entry, close_confirm, close_edit, connect, dates, delete, open_confirm, open_edit, range, reload,
@@ -359,7 +359,7 @@ fn entries(s: &State) -> Node {
         .child(row().prop("justify", "between").child(summary(if current { "This week".into() } else { week_range(&monday) })).child(summary(duration(total))))
 }
 
-// ---------- the popover: `src/ui/Popover.tsx` ----------
+// ---------- the popover ----------
 
 /// The popover under the title bar button: the same timers and today's entries as the sidebar, compact, with a manual
 /// entry form and no other days.
